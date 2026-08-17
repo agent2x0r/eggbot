@@ -22,13 +22,19 @@ type Session struct {
 	Remote  string
 	Kind    string // telnet, dcc, tls
 
-	wmu sync.Mutex
-	out chan string
+	wmu    sync.Mutex
+	out    chan string
+	closed bool
 }
 
 func (s *Session) Write(line string) {
 	if s.out == nil {
 		s.writeDirect(line)
+		return
+	}
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	if s.closed {
 		return
 	}
 	select {
@@ -38,6 +44,16 @@ func (s *Session) Write(line string) {
 			_ = s.Conn.Close()
 		}
 	}
+}
+
+func (s *Session) closeOut() {
+	s.wmu.Lock()
+	defer s.wmu.Unlock()
+	if s.closed || s.out == nil {
+		return
+	}
+	s.closed = true
+	close(s.out)
 }
 
 func (s *Session) writeDirect(line string) {
@@ -254,7 +270,7 @@ func (s *Server) serve(c net.Conn, kind string) {
 	s.add(sess)
 	defer func() {
 		s.remove(sess)
-		close(sess.out)
+		sess.closeOut()
 	}()
 	sess.Write("welcome to the partyline, " + handle + ". type .help")
 	if s.OnJoin != nil {
