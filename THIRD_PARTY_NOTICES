@@ -1,0 +1,279 @@
+Third-party notices for eggbot
+==============================
+
+eggbot source is MIT (see LICENSE). Dependencies in go.mod are under their
+own permissive licenses. None are copyleft (no GPL, LGPL, AGPL, or SSPL).
+
+This is a source tree. Users build with `go build` / `make`; we do not ship
+prebuilt binaries. `go build` fetches modules, and each module keeps its own
+LICENSE in the module cache. This file is a convenience index of those terms.
+
+Python plugins use only the Python standard library (CPython is not bundled).
+Lua runs in-process via gopher-lua; Lua.org sources are not bundled.
+
+----------------------------------------------------------------------
+Modules pulled in by a normal `go build ./cmd/eggbot`
+----------------------------------------------------------------------
+
+Direct (go.mod require):
+
+  github.com/ergochat/irc-go v0.6.0
+    ISC (package root)
+    Copyright (c) 2016-2021 Daniel Oaks
+    Copyright (c) 2018-2021 Shivaram Lingamneni
+    Nested: ircevent is BSD-3-Clause
+      Copyright (c) 2009 Thomas Jager. All rights reserved.
+      Copyright (c) 2021 Shivaram Lingamneni.
+
+  github.com/pelletier/go-toml/v2 v2.2.4
+    MIT
+    Copyright (c) 2021 - 2023 Thomas Pelletier
+
+  github.com/yuin/gopher-lua v1.1.1
+    MIT
+    Copyright (c) 2015 Yusuke Inuzuka
+
+  golang.org/x/crypto v0.36.0
+    BSD-3-Clause
+    Copyright 2009 The Go Authors.
+    Additional Google patent grant: see PATENTS in that module.
+
+  modernc.org/sqlite v1.37.0
+    BSD-3-Clause (Go translation / wrapper)
+    Copyright (c) 2017 The Sqlite Authors. All rights reserved.
+    Nested: original SQLite deliverable code is public domain
+    (see SQLITE-LICENSE in that module).
+
+Indirect (linked via modernc.org/sqlite and the modules above):
+
+  github.com/dustin/go-humanize v1.0.1          MIT
+    Copyright (c) 2005-2008 Dustin Sallings <dustin@spy.net>
+
+  github.com/google/uuid v1.6.0                 BSD-3-Clause
+    Copyright (c) 2009,2014 Google Inc. All rights reserved.
+
+  github.com/mattn/go-isatty v0.0.20            MIT
+    Copyright (c) Yasuhiro MATSUMOTO <mattn.jp@gmail.com>
+
+  github.com/ncruces/go-strftime v0.1.9         MIT
+    Copyright (c) 2022 Nuno Cruces
+
+  github.com/remyoudompheng/bigfft              BSD-3-Clause
+    (v0.0.0-20230129092748-24d4a6f8daec)
+    Copyright (c) 2012 The Go Authors. All rights reserved.
+
+  golang.org/x/exp                              BSD-3-Clause
+    (v0.0.0-20250305212735-054e65f0b394)
+    Copyright 2009 The Go Authors.
+
+  golang.org/x/sys v0.31.0                      BSD-3-Clause
+    Copyright 2009 The Go Authors.
+
+  modernc.org/libc v1.62.1                      BSD-3-Clause
+    Copyright (c) 2017 The Libc Authors. All rights reserved.
+    Nested: portions under BSD-3-Clause (The Go Authors) and MIT
+      (Copyright (c) 2012 Dominik Honnef — honnef.co/go/netdb).
+
+  modernc.org/mathutil v1.7.1                   BSD-3-Clause
+    Copyright (c) 2014 The mathutil Authors. All rights reserved.
+
+  modernc.org/memory v1.9.1                     BSD-3-Clause
+    Copyright (c) 2017 The Memory Authors. All rights reserved.
+    Nested: BSD-3-Clause (The Go Authors) and BSD-3-Clause
+      (Copyright (c) 2011, Evan Shaw <edsrzf@gmail.com> — mmap-go).
+
+Go standard library (the Go toolchain, not listed in go.mod) is also
+BSD-3-Clause, Copyright The Go Authors.
+
+Modules that appear only in go.sum (test / generate tooling of sqlite,
+e.g. modernc.org/cc, golang.org/x/tools, github.com/google/pprof) are
+not required to compile eggbot.
+
+----------------------------------------------------------------------
+ISC License (irc-go)
+----------------------------------------------------------------------
+
+Copyright (c) 2016-2021 Daniel Oaks
+Copyright (c) 2018-2021 Shivaram Lingamneni
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+----------------------------------------------------------------------
+MIT License (go-toml, gopher-lua, go-humanize, go-isatty, go-strftime,
+honnef.co/go/netdb)
+----------------------------------------------------------------------
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Copyright holders: Thomas Pelletier (go-toml v2); Yusuke Inuzuka
+(gopher-lua); Dustin Sallings (go-humanize); Yasuhiro MATSUMOTO
+(go-isatty); Nuno Cruces (go-strftime); Dominik Honnef (netdb).
+
+----------------------------------------------------------------------
+BSD-3-Clause (Go Authors / Google form)
+----------------------------------------------------------------------
+
+Used by golang.org/x/crypto, golang.org/x/exp, golang.org/x/sys,
+github.com/google/uuid, github.com/remyoudompheng/bigfft, irc-go/ircevent
+(Thomas Jager / Shivaram Lingamneni), and nested Go-Authors files in
+modernc.org/libc and modernc.org/memory.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Some of these files say "Google Inc." instead of "Google LLC"; the
+substantive terms are the same. ircevent names Thomas Jager and
+Shivaram Lingamneni rather than Google.
+
+----------------------------------------------------------------------
+BSD-3-Clause (modernc.org form)
+----------------------------------------------------------------------
+
+Used by modernc.org/sqlite, modernc.org/libc, modernc.org/mathutil,
+and modernc.org/memory.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the names of the authors nor the names of the
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+sqlite's LICENSE uses numbered conditions and "copyright holder" in
+the endorsement clause; the terms are the same BSD-3-Clause.
+
+mmap-go (nested in modernc.org/memory):
+
+Copyright (c) 2011, Evan Shaw <edsrzf@gmail.com>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the copyright holder nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+----------------------------------------------------------------------
+SQLite public domain dedication (original SQLite deliverable)
+----------------------------------------------------------------------
+
+SQLite Is Public Domain
+
+All of the code and documentation in SQLite has been dedicated to the public
+domain by the authors. Anyone is free to copy, modify, publish, use, compile,
+sell, or distribute the original SQLite code, either in source code form or
+as a compiled binary, for any purpose, commercial or non-commercial, and by
+any means.
+
+modernc.org/sqlite is a Go translation/wrapper and is BSD-3-Clause as
+listed above; this dedication applies to the original SQLite deliverable
+code that translation is based on.
+
+----------------------------------------------------------------------
+Google additional IP rights grant (golang.org/x/*)
+----------------------------------------------------------------------
+
+"This implementation" means the copyrightable works distributed by
+Google as part of the Go project.
+
+Google hereby grants to You a perpetual, worldwide, non-exclusive,
+no-charge, royalty-free, irrevocable (except as stated in this section)
+patent license to make, have made, use, offer to sell, sell, import,
+transfer and otherwise run, modify and propagate the contents of this
+implementation of Go, where such license applies only to those patent
+claims, both currently owned or controlled by Google and acquired in
+the future, licensable by Google that are necessarily infringed by this
+implementation of Go.  This grant does not include claims that would be
+infringed only as a consequence of further modification of this
+implementation.  If you or your agent or exclusive licensee institute or
+order or agree to the institution of patent litigation against any
+entity (including a cross-claim or counterclaim in a lawsuit) alleging
+that this implementation of Go or any code incorporated within this
+implementation of Go constitutes direct or contributory patent
+infringement, or inducement of patent infringement, then any patent
+rights granted to you under this License for this implementation of Go
+shall terminate as of the date such litigation is filed.

@@ -1,0 +1,11 @@
+# Optional live IRCd matrix. From repo root:
+#   docker compose -f test/integration/compose.yml up -d
+#   EGGBOT_IRCD_MATRIX=1 go test ./test/integration
+services:
+  ergo:
+    image: ghcr.io/ergochat/ergo:stable
+    ports:
+      - "127.0.0.1:6667:6667"
+      - "127.0.0.1:6697:6697"
+  # inspircd, unrealircd, and solanum images are operator-supplied.
+  # Optional live daemons. chonkline is covered by empty-CAP unit transcripts.

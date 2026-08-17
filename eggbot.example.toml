@@ -1,0 +1,96 @@
+# Copy to eggbot.toml and edit. Secrets belong in the environment, not this file.
+
+nick = "eggbot"
+alt_nicks = ["eggbot_", "eggbot2"]
+username = "eggbot"
+realname = "an egg with a brain"
+
+[server]
+host = "irc.example.net"
+port = 6697
+tls = true
+network = "example"
+# endpoints = ["irc.example.net:6697"]   # failover, same network
+password = ""
+password_env = ""
+sasl_account = ""
+sasl_password_env = "EGGBOT_SASL_PASSWORD"
+# Leave empty to request the production IRCv3 set when advertised.
+# A CAP REQ is never sent after an empty CAP LS.
+request_caps = []
+tls_server_name = ""
+ca_file = ""
+client_cert = ""
+client_key = ""
+dial_timeout_sec = 15
+
+[partyline]
+# Plaintext is accepted only on loopback. Use tls_listen + cert/key remotely.
+listen = "127.0.0.1:3333"
+tls_listen = ""
+dcc = false                    # opt-in; internal/private targets are rejected
+
+[owners]
+handles = ["alice"]
+# Optional masks must include an ident or host; "alice!*@*" is rejected.
+auto_owner_hosts = []
+
+[learn]
+hello = false
+production = false            # set true on a long-running host; disables hello and first-login bootstrap
+hello_flags = ""              # empty = created with no flags; cannot grant n/m/o
+hello_per_hour = 10
+
+[channels]
+join = ["#cool"]
+
+[channel."#cool"]
+chanset = "+enforcebans +protectops +seen +ai"
+llm_persona = ""
+greet = ""
+need_op = ""
+
+[llm]
+enabled = true
+base_url = "https://api.x.ai/v1"
+api_key_env = "XAI_API_KEY"
+# api_key = ""            # discouraged; prefer api_key_env
+model = "grok-4.6"
+allow_privmsg = false
+search = true             # web + X on SEARCH route; trivia stays LOCAL
+confirm_mutations = true  # kick/ban/mode/topic/chanset need .confirm
+store_provider = false    # do not persist prompts at the provider
+# route_model = ""        # optional cheaper model for SEARCH vs LOCAL
+# persona is optional; empty uses the built-in default
+
+[llm.limits]
+per_user_per_min = 1          # regulars
+op_per_min = 4
+owner_unlimited = true        # +n / +m skip caps
+per_channel_per_min = 8       # pile-on brake
+max_channel_chars = 800
+max_dm_chars = 1200
+history_lines = 80            # in-memory scrollback; lost on restart
+timeout_sec = 60
+max_tool_steps = 4
+
+[scripts]
+lua_dir = "scripts/lua"          # relative to this toml file
+python_dir = "scripts/python"    # skipped unless python = true
+python_bin = "python3"
+python = false
+# Lua: permits chattr/sensitive raw commands. Python: required to run at all,
+# because Python plugins have filesystem/process/environment/network access.
+trusted = []
+
+[store]
+path = "eggbot.db"                # relative to this toml file
+retention_days = 90
+
+[observe]
+listen = "127.0.0.1:0"            # /live /ready /metrics
+json_logs = false
+
+[log]
+level = "info"
+debug_irc = false             # must remain false; raw credential logging is rejected

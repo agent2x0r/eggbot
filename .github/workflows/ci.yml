@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  STATICCHECK_VERSION: "2025.1.1"
+  GOVULNCHECK_VERSION: "v1.1.4"
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c2679d93118 # v5.5.0
+        with:
+          go-version: 1.25.13
+          cache: true
+      - name: Format and modules
+        run: |
+          test -z "$(gofmt -l ./internal ./cmd ./test)"
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - run: go test -race -count=1 ./...
+      - run: go test -count=1 ./test/integration
+      - name: Coverage
+        run: |
+          go test -count=1 -covermode=set -coverpkg=./... -coverprofile=coverage.out ./...
+          chmod +x scripts/check-coverage.sh
+          OVERALL_MIN=85 CRITICAL_MIN=90 scripts/check-coverage.sh coverage.out
+      - run: go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@${STATICCHECK_VERSION} ./...
+      - run: go run golang.org/x/vuln/cmd/govulncheck@${GOVULNCHECK_VERSION} ./...
+
+  fuzz:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c2679d93118 # v5.5.0
+        with:
+          go-version: 1.25.13
+          cache: true
+      - run: go test -fuzz=FuzzISupport -fuzztime=30s ./internal/ircx
+      - run: go test -fuzz=FuzzEncodeLine -fuzztime=20s ./internal/ircx
+      - run: go test -fuzz=FuzzIsCTCP -fuzztime=20s ./internal/origin
