@@ -100,7 +100,6 @@ type LLM struct {
 	APIKey           string `toml:"api_key"`
 	APIKeyEnv        string `toml:"api_key_env"`
 	Model            string `toml:"model"`
-	API              string `toml:"api"`
 	AllowPrivmsg     bool   `toml:"allow_privmsg"`
 	Search           bool   `toml:"search"`
 	RouteModel       string `toml:"route_model"` // cheap/fast model for SEARCH vs LOCAL
@@ -162,7 +161,6 @@ func Defaults() *Config {
 			BaseURL:          "https://api.x.ai/v1",
 			APIKeyEnv:        "XAI_API_KEY",
 			Model:            "grok-4.6",
-			API:              "chat_completions",
 			Search:           true,
 			Persona:          DefaultPersona,
 			ConfirmMutations: true,

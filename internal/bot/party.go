@@ -15,6 +15,7 @@ import (
 	"eggbot/internal/origin"
 	"eggbot/internal/partyline"
 	"eggbot/internal/script"
+	"eggbot/internal/store"
 	"eggbot/internal/userfile"
 	"eggbot/internal/version"
 )
@@ -788,7 +789,18 @@ func (b *Bot) cmdSave(s *partyline.Session, _ *userfile.User, _ string) {
 		s.Printf("save failed for %d channel(s)", failed)
 		return
 	}
-	s.Write("saved")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	res, err := b.Store.Checkpoint(ctx, store.CheckpointTruncate)
+	if err != nil {
+		s.Write("saved, wal checkpoint failed: " + err.Error())
+		return
+	}
+	if res.Blocked != 0 {
+		s.Printf("saved (wal checkpoint blocked, %d/%d frames)", res.Checkpointed, res.Log)
+		return
+	}
+	s.Printf("saved (wal checkpointed %d frames)", res.Checkpointed)
 }
 
 func (b *Bot) cmdReload(s *partyline.Session, _ *userfile.User, _ string) {

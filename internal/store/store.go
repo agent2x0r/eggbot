@@ -3,18 +3,33 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"os"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	_ "modernc.org/sqlite"
 )
 
+const (
+	CheckpointPassive  = "PASSIVE"
+	CheckpointTruncate = "TRUNCATE"
+)
+
 type Store struct {
-	DB   *sql.DB
-	path string
-	lock *os.File
+	DB        *sql.DB
+	path      string
+	lock      *os.File
+	writeErrs atomic.Uint64
+}
+
+type CheckpointResult struct {
+	Blocked      int
+	Log          int
+	Checkpointed int
 }
 
 func Open(path string) (*Store, error) {
@@ -70,12 +85,64 @@ func secureDatabaseFiles(path string) error {
 }
 
 func (s *Store) Close() error {
+	if s.DB != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, _ = s.Checkpoint(ctx, CheckpointTruncate)
+		cancel()
+	}
 	err := s.DB.Close()
 	if s.lock != nil {
 		_ = s.lock.Close()
 		s.lock = nil
 	}
 	return err
+}
+
+func (s *Store) NoteWriteError() {
+	if s == nil {
+		return
+	}
+	s.writeErrs.Add(1)
+}
+
+func (s *Store) WriteErrors() uint64 {
+	if s == nil {
+		return 0
+	}
+	return s.writeErrs.Load()
+}
+
+// Checkpoint copies WAL frames into the main database file. PASSIVE never
+// waits; TRUNCATE resets the WAL when nothing else holds it. :memory: is a no-op.
+func (s *Store) Checkpoint(ctx context.Context, mode string) (CheckpointResult, error) {
+	var out CheckpointResult
+	if s == nil {
+		return out, fmt.Errorf("store closed")
+	}
+	if s.path == "" || s.path == ":memory:" {
+		return out, nil
+	}
+	if s.DB == nil {
+		return out, fmt.Errorf("store closed")
+	}
+	switch strings.ToUpper(strings.TrimSpace(mode)) {
+	case CheckpointTruncate:
+		mode = CheckpointTruncate
+	case "RESTART":
+		mode = "RESTART"
+	case "FULL":
+		mode = "FULL"
+	default:
+		mode = CheckpointPassive
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	err := s.DB.QueryRowContext(ctx, "PRAGMA wal_checkpoint("+mode+")").Scan(&out.Blocked, &out.Log, &out.Checkpointed)
+	if err != nil {
+		return out, fmt.Errorf("wal checkpoint %s: %w", mode, err)
+	}
+	return out, nil
 }
 
 const schema = `

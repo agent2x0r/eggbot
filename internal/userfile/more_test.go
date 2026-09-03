@@ -30,7 +30,9 @@ func TestListHostsTouchMatch(t *testing.T) {
 	if !u.HasPass() {
 		t.Fatal("pass")
 	}
-	f.Touch("bob")
+	if err := f.Touch("bob"); err != nil {
+		t.Fatal(err)
+	}
 	_ = f.MatchAttr(u, "-", "")
 	_ = f.MatchAttr(u, "p", "")
 	_ = f.MatchAttr(nil, "-", "")
@@ -51,5 +53,23 @@ func TestListHostsTouchMatch(t *testing.T) {
 	}
 	if err := f.Delete("bob"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTouchErrorOnClosedStore(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := New(st, []string{"nate"})
+	if err := f.SeedOwners(); err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	if err := f.Touch("nate"); err == nil {
+		t.Fatal("expected last_seen error on closed store")
+	}
+	if st.WriteErrors() == 0 {
+		t.Fatal("closed touch should count a write error")
 	}
 }

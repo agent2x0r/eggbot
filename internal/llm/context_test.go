@@ -17,8 +17,23 @@ func TestNormalizeIRC(t *testing.T) {
 	if strings.Contains(got, "[[") || strings.Contains(got, "<eos>") || strings.Contains(got, "](") {
 		t.Fatalf("markdown survived: %q", got)
 	}
-	if !strings.Contains(got, "https://github.com/ergochat/ergo/blob/master/CHANGELOG.md") {
-		t.Fatalf("url lost: %q", got)
+	if strings.Contains(got, "https://") {
+		t.Fatalf("citation url leaked: %q", got)
+	}
+	if got != "Ergo latest" {
+		t.Fatalf("cite %q", got)
+	}
+	glued := normalizeIRC("hey[1](https://irc.chonkbase.net/)")
+	if glued != "hey" {
+		t.Fatalf("glued cite %q", glued)
+	}
+	thanks := normalizeIRC("thanks ([1](https://irc.chonkbase.net/))")
+	if thanks != "thanks" {
+		t.Fatalf("paren cite %q", thanks)
+	}
+	bare := normalizeIRC("hey [[1]](https://irc.chonkbase.net/)")
+	if bare != "hey" {
+		t.Fatalf("double-bracket cite %q", bare)
 	}
 
 	link := normalizeIRC("see [Project](https://example.test/repo) and **bold**")

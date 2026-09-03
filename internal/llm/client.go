@@ -96,7 +96,7 @@ func (c *Client) Chat(messages []Message, tools []ToolSpec) (Message, error) {
 
 func (c *Client) chat(model string, messages []Message, tools []ToolSpec, maxTokens int) (Message, error) {
 	if c.APIKey == "" {
-		return Message{}, fmt.Errorf("no API key configured (set %s or llm.api_key)", "XAI_API_KEY")
+		return Message{}, fmt.Errorf("no API key configured (set llm.api_key or llm.api_key_env)")
 	}
 	if model == "" {
 		model = c.Model

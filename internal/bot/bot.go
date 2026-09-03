@@ -373,14 +373,14 @@ func (b *Bot) resolve(o origin.Origin) (*userfile.User, origin.Origin) {
 	if handle, mech := b.Ident.Resolve(network, o.Account, o.CertFP); handle != "" {
 		if u, err := b.Users.Get(handle); err == nil {
 			o.Handle = u.Handle
-			b.Users.Touch(u.Handle)
+			b.touchUser(u.Handle)
 			_ = mech
 			return u, o
 		}
 	}
 	if u := b.Users.FindByHost(o.NUH()); u != nil {
 		o.Handle = u.Handle
-		b.Users.Touch(u.Handle)
+		b.touchUser(u.Handle)
 		if o.Account != "" && o.Account != "*" {
 			_ = b.Ident.Bind(u.Handle, network, identity.MechAccount, o.Account)
 		}
@@ -464,7 +464,7 @@ func (b *Bot) onPrivmsg(msg ircmsg.Message) {
 		b.PL.Consolef('m', "[%s] <%s> %s", target, o.Nick, text)
 		if c := b.Chans.Get(target); c != nil {
 			if c.Chanset.Has("seen") {
-				b.Seen.Record(o.Nick, o.Handle, o.Account, o.NUH(), target, "saying", text)
+				b.recordSeen(o.Nick, o.Handle, o.Account, o.NUH(), target, "saying", text)
 			}
 			if c.Chanset.Has("ai") {
 				b.LLM.Remember(target, o.Nick, text)
@@ -565,6 +565,24 @@ func (b *Bot) seenEnabledForNick(nick string) bool {
 	return false
 }
 
+func (b *Bot) recordSeen(nick, handle, account, host, channel, event, text string) {
+	if b.Seen == nil {
+		return
+	}
+	if err := b.Seen.Record(nick, handle, account, host, channel, event, text); err != nil && b.Log != nil {
+		b.Log.Error("seen record", "nick", nick, "channel", channel, "event", event, "err", err)
+	}
+}
+
+func (b *Bot) touchUser(handle string) {
+	if b.Users == nil || handle == "" {
+		return
+	}
+	if err := b.Users.Touch(handle); err != nil && b.Log != nil {
+		b.Log.Error("last_seen", "handle", handle, "err", err)
+	}
+}
+
 func (b *Bot) onJoin(msg ircmsg.Message) {
 	o := origin.FromMessage(msg)
 	u, o := b.resolve(o)
@@ -583,7 +601,7 @@ func (b *Bot) onJoin(msg ircmsg.Message) {
 	b.Chans.AddMember(ch, o.Nick, o.User, o.Host, o.Account, "")
 	b.PL.Consolef('j', "[%s] join %s (%s)", ch, o.Nick, o.NUH())
 	if b.channelSetting(ch, "seen") {
-		b.Seen.Record(o.Nick, o.Handle, o.Account, o.NUH(), ch, "joining", "")
+		b.recordSeen(o.Nick, o.Handle, o.Account, o.NUH(), ch, "joining", "")
 	}
 	b.Protect.OnJoin(ch, o)
 	if c := b.Chans.Get(ch); c != nil && c.Chanset.Has("greet") && c.Greet != "" && u != nil {
@@ -615,7 +633,7 @@ func (b *Bot) onPart(msg ircmsg.Message) {
 	b.Chans.RemoveMember(ch, o.Nick)
 	b.PL.Consolef('p', "[%s] part %s", ch, o.Nick)
 	if recordSeen {
-		b.Seen.Record(o.Nick, o.Handle, o.Account, o.NUH(), ch, "parting", origin.Last(msg))
+		b.recordSeen(o.Nick, o.Handle, o.Account, o.NUH(), ch, "parting", origin.Last(msg))
 	}
 	b.Scripts.Dispatch("part", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: ch, Text: origin.Last(msg),
@@ -627,7 +645,7 @@ func (b *Bot) onQuit(msg ircmsg.Message) {
 	_, o = b.resolve(o)
 	b.PL.Consolef('p', "quit %s (%s)", o.Nick, origin.Last(msg))
 	if b.seenEnabledForNick(o.Nick) {
-		b.Seen.Record(o.Nick, o.Handle, o.Account, o.NUH(), "", "quitting", origin.Last(msg))
+		b.recordSeen(o.Nick, o.Handle, o.Account, o.NUH(), "", "quitting", origin.Last(msg))
 	}
 	for _, c := range b.Chans.All() {
 		b.Chans.RemoveMember(c.Name, o.Nick)
@@ -647,7 +665,7 @@ func (b *Bot) onKick(msg ircmsg.Message) {
 	b.PL.Consolef('k', "[%s] %s kicked %s (%s)", ch, o.Nick, victim, reason)
 	b.Protect.OnKick(ch, o.Nick, victim, reason)
 	if b.channelSetting(ch, "seen") {
-		b.Seen.Record(victim, "", "", "", ch, "kicked", reason)
+		b.recordSeen(victim, "", "", "", ch, "kicked", reason)
 	}
 	b.Scripts.Dispatch("kick", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: ch, Text: victim + " " + reason,
@@ -696,7 +714,7 @@ func (b *Bot) onNick(msg ircmsg.Message) {
 	b.Chans.NickChange(o.Nick, neu)
 	b.PL.Consolef('n', "nick %s -> %s", o.Nick, neu)
 	if recordSeen {
-		b.Seen.Record(neu, o.Handle, o.Account, hostmask.Normalize(neu, o.User, o.Host), "", "nicking", o.Nick)
+		b.recordSeen(neu, o.Handle, o.Account, hostmask.Normalize(neu, o.User, o.Host), "", "nicking", o.Nick)
 	}
 	b.Protect.OnNick(o, neu)
 	b.Scripts.Dispatch("nick", script.Event{

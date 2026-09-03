@@ -92,10 +92,11 @@ func Main(args []string) int {
 			Ready: b.Ready,
 			Stats: func() map[string]any {
 				return map[string]any{
-					"irc_ready":   b.IRC.Ready(),
-					"queue_depth": b.IRC.Queue().Len(),
-					"queue_drops": b.IRC.Queue().Drops(),
-					"irc_state":   b.IRC.State().String(),
+					"irc_ready":           b.IRC.Ready(),
+					"queue_depth":         b.IRC.Queue().Len(),
+					"queue_drops":         b.IRC.Queue().Drops(),
+					"irc_state":           b.IRC.State().String(),
+					"sqlite_write_errors": b.Store.WriteErrors(),
 				}
 			},
 		},

@@ -1,0 +1,13 @@
+[Unit]
+Description=eggbot #lobby hourly room reader
+After=eggbot.service
+Requires=eggbot.service
+
+[Service]
+Type=oneshot
+User=eggbot
+Group=eggbot
+EnvironmentFile=/etc/eggbot/eggbot.env
+EnvironmentFile=/etc/eggbot/room-reader.env
+ExecStart=/usr/bin/python3 /opt/room-reader/room_reader.py
+Nice=10

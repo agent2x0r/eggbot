@@ -13,6 +13,7 @@ import (
 	"eggbot/internal/llm"
 	"eggbot/internal/origin"
 	"eggbot/internal/partyline"
+	"eggbot/internal/store"
 	"eggbot/internal/version"
 )
 
@@ -100,6 +101,45 @@ func TestPartylineCommands(t *testing.T) {
 	b.onPartyline(s, ".backup "+dest)
 	if _, err := os.Stat(dest); err != nil {
 		t.Fatalf("backup: %v", err)
+	}
+}
+
+func TestRecordSeenAndTouchOnClosedStore(t *testing.T) {
+	b := testBot(t)
+	_ = b.Store.Close()
+	b.recordSeen("nate", "nate", "", "n!u@h", "#lobby", "saying", "x")
+	b.touchUser("nate")
+	if b.Store.WriteErrors() == 0 {
+		t.Fatal("expected sqlite write errors after closed store")
+	}
+}
+
+func TestSaveCheckpointsSeenToMainFile(t *testing.T) {
+	b := testBot(t)
+	if err := b.Seen.Record("nate", "nate", "", "n!u@h", "#lobby", "saying", "hello"); err != nil {
+		t.Fatal(err)
+	}
+	s := testPLSession(t, "nate")
+	b.cmdSave(s, nil, "")
+	copyPath := filepath.Join(t.TempDir(), "copy.db")
+	raw, err := os.ReadFile(b.Cfg.Store.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(copyPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st2, err := store.Open(copyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st2.Close() })
+	var n int
+	if err := st2.DB.QueryRow(`SELECT COUNT(*) FROM seen WHERE nick='nate' AND last_text='hello'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("main file missing seen after .save, count=%d", n)
 	}
 }
 

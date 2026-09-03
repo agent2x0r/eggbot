@@ -379,11 +379,16 @@ func (f *File) Chattr(handle, spec, channel string) (*User, error) {
 	return u, nil
 }
 
-func (f *File) Touch(handle string) {
+func (f *File) Touch(handle string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	handle = irccase.Fold(handle)
-	_, _ = f.st.DB.Exec(`UPDATE users SET last_seen = ? WHERE handle = ?`, store.Now(), handle)
+	_, err := f.st.DB.Exec(`UPDATE users SET last_seen = ? WHERE handle = ?`, store.Now(), handle)
+	if err != nil {
+		f.st.NoteWriteError()
+		return err
+	}
+	return nil
 }
 
 func (f *File) MatchAttr(u *User, expr, channel string) bool {

@@ -14,7 +14,7 @@ import "fmt"
 // These are overridden by -ldflags at build time. Version must stay in sync
 // with CHANGELOG.md; the unit test enforces that.
 var (
-	Version = "0.1.0"
+	Version = "0.1.1"
 	Commit  = "unknown"
 	Date    = "unknown"
 )

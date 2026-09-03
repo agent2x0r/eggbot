@@ -28,18 +28,23 @@ type Module struct {
 
 func New(st *store.Store) *Module { return &Module{st: st} }
 
-func (m *Module) Record(nick, handle, account, host, channel, event, text string) {
+func (m *Module) Record(nick, handle, account, host, channel, event, text string) error {
 	nickF := irccase.Fold(nick)
 	if len(text) > 200 {
 		text = text[:200]
 	}
-	_, _ = m.st.DB.Exec(
+	_, err := m.st.DB.Exec(
 		`INSERT INTO seen (nick, handle, account, host, channel, event, last_text, seen_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(nick) DO UPDATE SET handle=excluded.handle, account=excluded.account, host=excluded.host,
 		   channel=excluded.channel, event=excluded.event, last_text=excluded.last_text, seen_at=excluded.seen_at`,
 		nickF, irccase.Fold(handle), account, host, channel, event, text, store.Now(),
 	)
+	if err != nil {
+		m.st.NoteWriteError()
+		return err
+	}
+	return nil
 }
 
 func (m *Module) Lookup(nick string) (*Record, error) {

@@ -65,6 +65,69 @@ func TestMigrationsAndBackup(t *testing.T) {
 	}
 }
 
+func TestCheckpointPutsSeenOnMainFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "eggbot.db")
+	st, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if _, err := st.DB.Exec(`INSERT INTO seen (nick, handle, account, host, channel, event, last_text, seen_at) VALUES ('nate','','','','#lobby','saying','hi', 99)`); err != nil {
+		t.Fatal(err)
+	}
+	res, err := st.Checkpoint(context.Background(), CheckpointTruncate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Blocked != 0 {
+		t.Fatalf("checkpoint blocked %+v", res)
+	}
+	copyPath := filepath.Join(dir, "copy.db")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(copyPath, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	st2, err := Open(copyPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st2.Close()
+	var n int
+	if err := st2.DB.QueryRow(`SELECT COUNT(*) FROM seen WHERE nick='nate' AND seen_at=99`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("main file missing seen after checkpoint, count=%d", n)
+	}
+	if _, err := st.Checkpoint(context.Background(), "nope"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (*Store)(nil).Checkpoint(context.Background(), CheckpointPassive); err == nil {
+		t.Fatal("nil store")
+	}
+}
+
+func TestWriteErrorsAndMemoryCheckpoint(t *testing.T) {
+	st := &Store{path: ":memory:"}
+	st.NoteWriteError()
+	st.NoteWriteError()
+	if st.WriteErrors() != 2 {
+		t.Fatalf("write errors %d", st.WriteErrors())
+	}
+	if (*Store)(nil).WriteErrors() != 0 {
+		t.Fatal("nil write errors")
+	}
+	(*Store)(nil).NoteWriteError()
+	res, err := st.Checkpoint(context.Background(), CheckpointTruncate)
+	if err != nil || res.Blocked != 0 {
+		t.Fatalf("memory checkpoint %+v %v", res, err)
+	}
+}
+
 func TestPurgeAndSingleLock(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "eggbot.db")

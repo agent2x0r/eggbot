@@ -130,7 +130,7 @@ func (b *Brain) buildMessages(req AskReq, hist []HistoryLine, githubNote string,
 	case DestDM:
 		sys += "\nThis reply is private. You can run longer and include URLs. Still no markdown tables."
 	default:
-		sys += "\nThis reply is public. Lead with the answer, then one link, in a few short sentences. Never answer by pointing to a DM."
+		sys += "\nThis reply is public: be brief and conversational. Include a URL only when the user asks for one or when a live lookup made it directly useful; then include at most one relevant canonical URL. Never attach a room-topic URL unless the question is specifically about that URL or topic. Never answer by pointing to a DM."
 	}
 	if req.Ops && req.User != nil {
 		sys += fmt.Sprintf("\nTool calls run as handle %s (+%s). Do not mention the handle or flags in the reply.", req.Handle, req.User.Global.String())

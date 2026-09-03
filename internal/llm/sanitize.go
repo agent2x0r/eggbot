@@ -27,6 +27,8 @@ var (
 	reBullet          = regexp.MustCompile(`(?m)^(?:[-*+]|\d+\.)\s+`)
 	reEOS             = regexp.MustCompile(`(?i)\s*(?:<eos>|</s>|<\|endoftext\|>|<\|eot_id\|>)\s*`)
 	reLeftoverCite    = regexp.MustCompile(`\[\[\s*\d+\s*\]\]`)
+	reLeftoverNumCite = regexp.MustCompile(`\[\s*\d+\s*\]`)
+	reEmptyParens     = regexp.MustCompile(`\s*\(\s*\)`)
 )
 
 func NormalizeIRC(s string) string { return normalizeIRC(s) }
@@ -48,7 +50,8 @@ func stripCitations(s string) string {
 func normalizeIRC(s string) string {
 	s = stripCitations(s)
 	s = reEOS.ReplaceAllString(s, " ")
-	s = reCiteLink.ReplaceAllString(s, "$1")
+	// Numbered / footnote citations are noise on IRC. Drop them, including the URL.
+	s = reCiteLink.ReplaceAllString(s, "")
 	s = reMDLink.ReplaceAllStringFunc(s, func(m string) string {
 		parts := reMDLink.FindStringSubmatch(m)
 		if len(parts) != 3 {
@@ -57,7 +60,7 @@ func normalizeIRC(s string) string {
 		label, url := strings.TrimSpace(parts[1]), parts[2]
 		label = strings.Trim(label, "[]")
 		if label == "" || isCiteLabel(label) || strings.EqualFold(label, url) {
-			return url
+			return ""
 		}
 		return label + " — " + url
 	})
@@ -69,6 +72,8 @@ func normalizeIRC(s string) string {
 	s = reInlineCode.ReplaceAllString(s, "$1")
 	s = reBullet.ReplaceAllString(s, "")
 	s = reLeftoverCite.ReplaceAllString(s, "")
+	s = reLeftoverNumCite.ReplaceAllString(s, "")
+	s = reEmptyParens.ReplaceAllString(s, "")
 	s = stripControls(s)
 	return tidyLines(s)
 }

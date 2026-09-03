@@ -35,6 +35,9 @@ func (b *Bot) expireLoop(ctx context.Context) {
 			if days := b.Cfg.Store.RetentionDays; days > 0 {
 				_ = b.Store.Purge(ctx, days)
 			}
+			if _, err := b.Store.Checkpoint(ctx, store.CheckpointPassive); err != nil && b.Log != nil {
+				b.Log.Error("wal checkpoint", "err", err)
+			}
 		}
 	}
 }

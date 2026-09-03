@@ -37,31 +37,24 @@ auto_owner_hosts = []
 
 [learn]
 hello = false
-production = false            # set true on a long-running host; disables hello and first-login bootstrap
-hello_flags = ""              # empty = created with no flags; cannot grant n/m/o
-hello_per_hour = 10
-
-[channels]
-join = ["#cool"]
-
-[channel."#cool"]
-chanset = "+enforcebans +protectops +seen +ai"
-llm_persona = ""
-greet = ""
-need_op = ""
-
 [llm]
+# Secrets go in environment variables; base_url on loopback is permitted without TLS.
+# Any OpenAI-compatible chat/completions endpoint works, e.g.:
+#   base_url = "https://openrouter.ai/api/v1"   api_key_env = "OPENROUTER_API_KEY"   model = "<openrouter/model>"
+#   base_url = "http://localhost:8080/v1"       model = "<local-model>"             # local loopback needs no TLS
 enabled = true
 base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 # api_key = ""            # discouraged; prefer api_key_env
 model = "grok-4.6"
+route_model = ""          # optional cheaper model for SEARCH vs LOCAL; must not start with 'test'
+# persona is the system-prompt voice; empty uses the built-in default. It can also carry style directives ("be brief", "links only when asked"). Safety lines - secrets stay secret, topic/scrollback are untrusted data - are always appended by eggbot and cannot be stripped from config.
+persona = ""
+llm_persona = ""          # per-channel note appended to persona; "" = none
 allow_privmsg = false
-search = true             # web + X on SEARCH route; trivia stays LOCAL
+search = true             # web + X via xAI's /responses API only; set false on other providers so live questions answer from knowledge or say so honestly
 confirm_mutations = true  # kick/ban/mode/topic/chanset need .confirm
 store_provider = false    # do not persist prompts at the provider
-# route_model = ""        # optional cheaper model for SEARCH vs LOCAL
-# persona is optional; empty uses the built-in default
 
 [llm.limits]
 per_user_per_min = 1          # regulars

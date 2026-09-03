@@ -58,7 +58,7 @@ type respItem struct {
 
 func (c *Client) Respond(messages []Message, fnTools []ToolSpec, search bool, prevID string) (text string, calls []ToolCall, respID string, err error) {
 	if c.APIKey == "" {
-		return "", nil, "", fmt.Errorf("no API key configured (set %s or llm.api_key)", "XAI_API_KEY")
+		return "", nil, "", fmt.Errorf("no API key configured (set llm.api_key or llm.api_key_env)")
 	}
 	var tools []map[string]any
 	if search {
