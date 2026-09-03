@@ -9,6 +9,7 @@ func FuzzIsCTCP(f *testing.F) {
 		_, _, _ = IsCTCP(s)
 		_, _, _ = Bang(s)
 		_, _ = Addressed("eggbot", s)
+		_, _, _ = AddressedTo(s)
 		_ = IsChannel(s)
 	})
 }

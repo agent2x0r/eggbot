@@ -12,13 +12,14 @@ import (
 )
 
 type Client struct {
-	BaseURL       string
-	APIKey        string
-	Model         string
-	HTTP          *http.Client
-	SearchHTTP    *http.Client
-	Ctx           context.Context
-	StoreProvider bool
+	BaseURL         string
+	APIKey          string
+	Model           string
+	SearchModel     string // live /responses lookup; empty = Model
+	SearchReasoning string // Responses reasoning.effort; empty = omit
+	HTTP            *http.Client
+	Ctx             context.Context
+	StoreProvider   bool
 }
 
 func NewClient(baseURL, apiKey, model string, timeout time.Duration) *Client {
@@ -26,13 +27,11 @@ func NewClient(baseURL, apiKey, model string, timeout time.Duration) *Client {
 	if timeout <= 0 {
 		timeout = 30 * time.Second
 	}
-	searchTO := timeout
 	return &Client{
-		BaseURL:    baseURL,
-		APIKey:     apiKey,
-		Model:      model,
-		HTTP:       &http.Client{Timeout: timeout},
-		SearchHTTP: &http.Client{Timeout: searchTO},
+		BaseURL: baseURL,
+		APIKey:  apiKey,
+		Model:   model,
+		HTTP:    &http.Client{Timeout: timeout},
 	}
 }
 

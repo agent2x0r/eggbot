@@ -16,6 +16,23 @@ func TestAddressed(t *testing.T) {
 	}
 }
 
+func TestAddressedTo(t *testing.T) {
+	nick, body, ok := AddressedTo("alice: hello")
+	if !ok || nick != "alice" || body != "hello" {
+		t.Fatalf("%q %q %v", nick, body, ok)
+	}
+	nick, body, ok = AddressedTo("Bob, later")
+	if !ok || nick != "Bob" || body != "later" {
+		t.Fatalf("%q %q %v", nick, body, ok)
+	}
+	if _, _, ok := AddressedTo("what about france"); ok {
+		t.Fatal("space should not count as addressing")
+	}
+	if _, _, ok := AddressedTo("eggs are cool"); ok {
+		t.Fatal("no prefix")
+	}
+}
+
 func TestBang(t *testing.T) {
 	cmd, args, ok := Bang("!seen nate")
 	if !ok || cmd != "seen" || args != "nate" {

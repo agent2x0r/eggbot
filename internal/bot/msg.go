@@ -1,10 +1,12 @@
 package bot
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"eggbot/internal/chanlog"
 	"eggbot/internal/flags"
 	"eggbot/internal/llm"
 	"eggbot/internal/origin"
@@ -47,7 +49,9 @@ func (b *Bot) handleMsg(o origin.Origin, u *userfile.User, text string) {
 		}
 		b.goWork(func() { b.askLLM(ch, o, u, "catch me up", llm.DestCatchup) })
 	case "help":
-		b.IRC.Notice(o.Nick, "hello pass ident op invite seen note notes chat whoami help catchup")
+		for _, line := range queryHelpLines(b.IRC.Nick()) {
+			b.IRC.Notice(o.Nick, line)
+		}
 	case "whoami":
 		if u == nil {
 			b.IRC.Notice(o.Nick, "i don't know you. /msg "+b.IRC.Nick()+" hello")
@@ -91,14 +95,27 @@ func (b *Bot) handlePublic(o origin.Origin, u *userfile.User, channel, text stri
 			}
 			b.IRC.PrivmsgHelp(channel, o.Nick+": noted")
 		case "ask", "ai":
-			if c != nil && c.Chanset.Has("ai") {
+			if c != nil && c.Chanset.Has("ai") && c.Member(o.Nick) != nil {
+				b.openSticky(channel, o, u)
 				b.goWork(func() { b.askLLM(channel, o, u, args, llm.DestChannel) })
+			}
+		case "search":
+			if c != nil && c.Chanset.Has("ai") && c.Member(o.Nick) != nil {
+				b.goWork(func() { b.askLLM(channel, o, u, args, llm.DestSearch) })
+			}
+		case "history":
+			if c != nil && c.Chanset.Has("ai") && c.Member(o.Nick) != nil {
+				b.openSticky(channel, o, u)
+				b.goWork(func() { b.askHistory(channel, o, u, args) })
 			}
 		case "catchup", "summary", "recap":
 			if c != nil && c.Chanset.Has("ai") {
 				b.goWork(func() { b.askLLM(channel, o, u, args, llm.DestCatchup) })
 			}
+		case "help":
+			b.sendPublicHelp(channel)
 		}
+		return
 	}
 	if c == nil || !c.Chanset.Has("ai") {
 		return
@@ -106,19 +123,102 @@ func (b *Bot) handlePublic(o origin.Origin, u *userfile.User, channel, text stri
 	if body, ok := origin.Addressed(b.IRC.Nick(), text); ok {
 		cmd, _ := origin.SplitToken(body)
 		switch strings.ToLower(cmd) {
-		case "hello", "pass", "password", "ident", "auth", "help", "whoami", "chat", "note", "notes":
+		case "hello", "pass", "password", "ident", "auth", "whoami", "chat", "note", "notes":
 			b.handleMsg(o, u, body)
 			return
+		case "help":
+			b.sendPublicHelp(channel)
+			return
 		}
+		if strings.TrimSpace(body) == "" {
+			return
+		}
+		b.openSticky(channel, o, u)
 		b.goWork(func() { b.askLLM(channel, o, u, body, llm.DestChannel) })
+		return
 	}
+	if b.Cfg == nil || !b.Cfg.LLM.Sticky || !b.Cfg.LLM.Enabled || b.sticky == nil {
+		return
+	}
+	prompt, kind := b.sticky.consider(channel, o.Nick, text, b.now())
+	if kind != stickyYes {
+		return
+	}
+	if b.sticky.holding(channel, o.Nick) {
+		handle := ""
+		if u != nil {
+			handle = u.Handle
+		}
+		b.sticky.pause(channel, o.Nick, prompt, o, handle, time.Time{}, b.now())
+		return
+	}
+	b.goWork(func() { b.askLLM(channel, o, u, prompt, llm.DestChannel) })
 }
 
 func (b *Bot) say(channel, text string) {
 	b.IRC.PrivmsgHelp(channel, text)
 	if origin.IsChannel(channel) && b.LLM != nil {
 		b.LLM.Remember(channel, b.IRC.Nick(), text)
+		b.logChat(channel, b.IRC.Nick(), text)
 	}
+}
+
+func (b *Bot) logChat(channel, nick, text string) {
+	if b.ChanLog == nil {
+		return
+	}
+	if err := b.ChanLog.Add(channel, nick, text); err != nil {
+		if b.Log != nil {
+			b.Log.Error("chanlog", "channel", channel, "err", err)
+		}
+		if b.Store != nil {
+			b.Store.NoteWriteError()
+		}
+	}
+}
+
+func (b *Bot) sendPublicHelp(channel string) {
+	for _, line := range publicHelpLines(b.IRC.Nick()) {
+		b.IRC.PrivmsgHelp(channel, line)
+	}
+}
+
+func publicHelpLines(nick string) []string {
+	return []string{
+		"say " + nick + ": <text> (or !ask <text>) and I'll remember you on subsequent replies",
+		"!search <question>     live web/X lookup",
+		"!history <words>       search saved chat (optional time: last 2 days, 3 weeks ago)",
+		"!note <handle> <text>  leave a note for a registered handle (not a nick)",
+		"/msg " + nick + " notes       read notes left for you",
+		"!seen <nick>   !quote   !catchup",
+	}
+}
+
+func queryHelpLines(nick string) []string {
+	return []string{
+		"query: hello  pass  ident  whoami  seen  note  notes  chat  catchup  help",
+		"in channel: " + nick + ": <text>  !ask  !search  !history  !note  !seen  !quote  !catchup  !help",
+	}
+}
+
+func (b *Bot) askHistory(channel string, o origin.Origin, u *userfile.User, query string) {
+	if b.ChanLog == nil {
+		b.say(channel, o.Nick+": no channel history yet")
+		return
+	}
+	lines, err := b.ChanLog.Search(channel, query, b.now())
+	if err != nil {
+		b.say(channel, o.Nick+": "+err.Error())
+		return
+	}
+	if len(lines) == 0 {
+		b.say(channel, o.Nick+": no matching history")
+		return
+	}
+	prompt := "The user asked about this channel's history: " + strings.TrimSpace(query) +
+		"\n\nMatching untrusted log lines:\n" + chanlog.Format(lines) +
+		"\nAnswer from those lines only. If they don't cover it, say so."
+	b.askLLM(channel, o, u, prompt, llm.DestCatchup)
 }
 
 func (b *Bot) pubSeen(from, who string, reply func(string)) {
@@ -372,11 +472,15 @@ func (b *Bot) msgChat(o origin.Origin, u *userfile.User) {
 
 func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt string, dest string) {
 	if strings.TrimSpace(prompt) == "" && dest != llm.DestCatchup {
+		if dest == llm.DestSearch && channel != "" {
+			b.say(channel, o.Nick+": search what?")
+		}
 		return
 	}
 	if dest == "" {
 		dest = llm.DestChannel
 	}
+	forceSearch := dest == llm.DestSearch
 	persona := ""
 	ops := false
 	if c := b.Chans.Get(channel); c != nil {
@@ -390,9 +494,24 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	req := llm.AskReq{
 		Channel: channel, Nick: o.Nick, Handle: handle, User: u,
 		Persona: persona, Prompt: prompt, Topic: b.channelTopic(channel), Dest: dest,
-		Helpful: dest != llm.DestCatchup, Ops: ops && dest != llm.DestCatchup,
+		Helpful: dest != llm.DestCatchup && dest != llm.DestSearch, Ops: ops && dest != llm.DestCatchup && dest != llm.DestSearch,
 	}
 	if err := b.LLM.Admit(&req); err != nil {
+		if (dest == llm.DestChannel || dest == llm.DestSearch) && channel != "" {
+			if rl, ok := llm.IsRateLimited(err); ok {
+				handle := ""
+				if u != nil {
+					handle = u.Handle
+				}
+				if b.sticky != nil && b.Cfg.LLM.Sticky {
+					warn := b.sticky.pause(channel, o.Nick, prompt, o, handle, rl.RetryAt, b.now())
+					if warn {
+						b.IRC.Notice(o.Nick, "too fast — I'll get to that when I can")
+					}
+					return
+				}
+			}
+		}
 		if channel != "" {
 			b.say(channel, o.Nick+": "+err.Error())
 		} else {
@@ -401,13 +520,15 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 		return
 	}
 	search := false
-	if dest != llm.DestCatchup && dest != llm.DestDM && b.Cfg.LLM.Search {
+	if forceSearch && b.Cfg.LLM.Search {
+		search = true
+	} else if dest != llm.DestCatchup && dest != llm.DestDM && dest != llm.DestSearch && b.Cfg.LLM.Search {
 		search = b.LLM.Route(prompt, b.LLM.RouteContext(channel, req.Topic, 8)) == llm.RouteSearch
 	}
 	req.Search = search
 	done := make(chan struct{})
 	onStart := func() {
-		if !(search && channel != "" && dest == llm.DestChannel) {
+		if !(search && channel != "" && (dest == llm.DestChannel || dest == llm.DestSearch)) {
 			return
 		}
 		go func() {
@@ -430,11 +551,27 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	reply, err := b.LLM.AskReq(req)
 	close(done)
 	if err != nil {
+		if errors.Is(err, llm.ErrStale) {
+			return
+		}
 		if channel != "" {
 			b.say(channel, o.Nick+": "+err.Error())
 		} else {
 			b.IRC.PrivmsgHelp(o.Nick, err.Error())
 		}
+		return
+	}
+	if forceSearch && (llm.SilentReply(reply) || llm.DropContext(reply) || strings.TrimSpace(reply) == "") {
+		b.say(channel, o.Nick+": nothing useful came back")
+		return
+	}
+	if llm.DropContext(reply) {
+		if b.sticky != nil && channel != "" {
+			b.sticky.drop(channel, o.Nick)
+		}
+		return
+	}
+	if llm.SilentReply(reply) {
 		return
 	}
 	switch dest {
@@ -443,6 +580,12 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	default:
 		if channel != "" {
 			b.say(channel, o.Nick+": "+reply)
+			if dest == llm.DestChannel || dest == llm.DestSearch {
+				b.openSticky(channel, o, u)
+				if b.sticky != nil {
+					b.sticky.touchReply(channel, o.Nick, b.now())
+				}
+			}
 		} else {
 			b.IRC.PrivmsgHelp(o.Nick, reply)
 		}

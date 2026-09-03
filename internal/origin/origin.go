@@ -108,6 +108,24 @@ func Addressed(botNick, text string) (body string, ok bool) {
 	return "", false
 }
 
+// AddressedTo reports a nick: / nick, prefix. Space after a nick is not
+// treated as addressing (too many false positives: "so true", "what about").
+func AddressedTo(text string) (nick, body string, ok bool) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "", "", false
+	}
+	i := strings.IndexAny(text, ":,")
+	if i <= 0 {
+		return "", "", false
+	}
+	nick = text[:i]
+	if nick == "" || strings.ContainsAny(nick, " \t!@") {
+		return "", "", false
+	}
+	return nick, strings.TrimSpace(text[i+1:]), true
+}
+
 func Bang(text string) (cmd, args string, ok bool) {
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(text, "!") {

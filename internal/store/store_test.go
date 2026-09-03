@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestOpenRestrictsDatabasePermissions(t *testing.T) {
@@ -40,7 +41,7 @@ func TestMigrationsAndBackup(t *testing.T) {
 	if err := st.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version < 2 {
+	if version < 3 {
 		t.Fatalf("version %d", version)
 	}
 	dest := filepath.Join(dir, "backup.db")
@@ -111,6 +112,62 @@ func TestCheckpointPutsSeenOnMainFile(t *testing.T) {
 	}
 }
 
+func TestPurgeChanlogKeepsYear(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	old := time.Now().Add(-400 * 24 * time.Hour).Unix()
+	fresh := time.Now().Unix()
+	if _, err := st.DB.Exec(`INSERT INTO chanlog (channel, nick, text, at) VALUES ('#lobby','a','old', ?), ('#lobby','b','new', ?)`, old, fresh); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.PurgeChanlog(context.Background(), 365); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := st.DB.QueryRow(`SELECT COUNT(*) FROM chanlog`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("chanlog rows %d", n)
+	}
+}
+
+func TestKVRoundTrip(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "t.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	v, err := st.GetKV("missing")
+	if err != nil || v != "" {
+		t.Fatalf("missing %q %v", v, err)
+	}
+	if err := st.PutKV("llm.chat_hist", `{"saved_at":1}`); err != nil {
+		t.Fatal(err)
+	}
+	v, err = st.GetKV("llm.chat_hist")
+	if err != nil || v != `{"saved_at":1}` {
+		t.Fatalf("get %q %v", v, err)
+	}
+	if err := st.PutKV("llm.chat_hist", "x"); err != nil {
+		t.Fatal(err)
+	}
+	v, err = st.GetKV("llm.chat_hist")
+	if err != nil || v != "x" {
+		t.Fatalf("update %q %v", v, err)
+	}
+	if err := st.DelKV("llm.chat_hist"); err != nil {
+		t.Fatal(err)
+	}
+	v, err = st.GetKV("llm.chat_hist")
+	if err != nil || v != "" {
+		t.Fatalf("deleted %q %v", v, err)
+	}
+}
+
 func TestWriteErrorsAndMemoryCheckpoint(t *testing.T) {
 	st := &Store{path: ":memory:"}
 	st.NoteWriteError()
@@ -174,8 +231,8 @@ func TestMigrateFromV1(t *testing.T) {
 	if err := st2.DB.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
 		t.Fatal(err)
 	}
-	if version < 2 {
-		t.Fatalf("expected v2 after reopen, got %d", version)
+	if version < 3 {
+		t.Fatalf("expected v3 after reopen, got %d", version)
 	}
 }
 

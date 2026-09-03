@@ -10,6 +10,12 @@ import (
 )
 
 func TestHelpers(t *testing.T) {
+	if !SilentReply("SILENT") || !SilentReply("  silent  ") || SilentReply("hello") {
+		t.Fatal("silent")
+	}
+	if !DropContext("DROP") || SilentReply("DROP") || DropContext("hello") {
+		t.Fatal("drop")
+	}
 	if friendlyErr(nil) != nil {
 		t.Fatal("nil")
 	}

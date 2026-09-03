@@ -35,9 +35,14 @@ func (b *Bot) expireLoop(ctx context.Context) {
 			if days := b.Cfg.Store.RetentionDays; days > 0 {
 				_ = b.Store.Purge(ctx, days)
 			}
+			if days := b.Cfg.Store.ChanlogDays; days > 0 {
+				_ = b.Store.PurgeChanlog(ctx, days)
+			}
+			b.saveChatHist()
 			if _, err := b.Store.Checkpoint(ctx, store.CheckpointPassive); err != nil && b.Log != nil {
 				b.Log.Error("wal checkpoint", "err", err)
 			}
+			b.resumeDueSticky(b.now())
 		}
 	}
 }

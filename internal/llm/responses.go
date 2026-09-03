@@ -34,6 +34,17 @@ type respRequest struct {
 	Tools              []map[string]any `json:"tools,omitempty"`
 	Store              bool             `json:"store"`
 	PreviousResponseID string           `json:"previous_response_id,omitempty"`
+	Reasoning          *respReasoning   `json:"reasoning,omitempty"`
+	MaxOutputTokens    int              `json:"max_output_tokens,omitempty"`
+}
+
+const (
+	searchMaxOutTokens = 90  // live lookup: a couple of sentences
+	searchMaxChars     = 280 // after "nick: ", still one typical IRC line
+)
+
+type respReasoning struct {
+	Effort string `json:"effort,omitempty"`
 }
 
 type respResponse struct {
@@ -56,13 +67,16 @@ type respItem struct {
 	} `json:"content"`
 }
 
-func (c *Client) Respond(messages []Message, fnTools []ToolSpec, search bool, prevID string) (text string, calls []ToolCall, respID string, err error) {
+func (c *Client) Respond(messages []Message, fnTools []ToolSpec, search, searchX bool, prevID string) (text string, calls []ToolCall, respID string, err error) {
 	if c.APIKey == "" {
 		return "", nil, "", fmt.Errorf("no API key configured (set llm.api_key or llm.api_key_env)")
 	}
 	var tools []map[string]any
 	if search {
-		tools = append(tools, webSearchTool(), xSearchTool())
+		tools = append(tools, webSearchTool())
+		if searchX {
+			tools = append(tools, xSearchTool())
+		}
 	}
 	for _, t := range fnTools {
 		tools = append(tools, functionTool(t))
@@ -76,13 +90,24 @@ func (c *Client) Respond(messages []Message, fnTools []ToolSpec, search bool, pr
 		input = messagesToInput(messages)
 	}
 
-	body, err := json.Marshal(respRequest{
-		Model:              c.Model,
+	model := c.Model
+	if search && strings.TrimSpace(c.SearchModel) != "" {
+		model = c.SearchModel
+	}
+	req := respRequest{
+		Model:              model,
 		Input:              input,
 		Tools:              tools,
 		Store:              c.StoreProvider,
 		PreviousResponseID: prevID,
-	})
+	}
+	if search {
+		req.MaxOutputTokens = searchMaxOutTokens
+		if effort := strings.TrimSpace(c.SearchReasoning); effort != "" {
+			req.Reasoning = &respReasoning{Effort: effort}
+		}
+	}
+	body, err := json.Marshal(req)
 	if err != nil {
 		return "", nil, "", err
 	}
@@ -92,11 +117,7 @@ func (c *Client) Respond(messages []Message, fnTools []ToolSpec, search bool, pr
 	}
 	httpReq.Header.Set("Authorization", "Bearer "+c.APIKey)
 	httpReq.Header.Set("Content-Type", "application/json")
-	hc := c.SearchHTTP
-	if hc == nil {
-		hc = c.HTTP
-	}
-	resp, err := hc.Do(httpReq)
+	resp, err := c.HTTP.Do(httpReq)
 	if err != nil {
 		return "", nil, "", err
 	}

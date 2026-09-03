@@ -234,3 +234,35 @@ CREATE TABLE IF NOT EXISTS kv (
 `
 
 func Now() int64 { return time.Now().Unix() }
+
+func (s *Store) PutKV(key, value string) error {
+	if s == nil || s.DB == nil {
+		return fmt.Errorf("store closed")
+	}
+	_, err := s.DB.Exec(
+		`INSERT INTO kv (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		key, value,
+	)
+	return err
+}
+
+func (s *Store) GetKV(key string) (string, error) {
+	if s == nil || s.DB == nil {
+		return "", fmt.Errorf("store closed")
+	}
+	var v string
+	err := s.DB.QueryRow(`SELECT value FROM kv WHERE key = ?`, key).Scan(&v)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return v, err
+}
+
+func (s *Store) DelKV(key string) error {
+	if s == nil || s.DB == nil {
+		return fmt.Errorf("store closed")
+	}
+	_, err := s.DB.Exec(`DELETE FROM kv WHERE key = ?`, key)
+	return err
+}

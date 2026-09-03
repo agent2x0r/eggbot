@@ -789,6 +789,7 @@ func (b *Bot) cmdSave(s *partyline.Session, _ *userfile.User, _ string) {
 		s.Printf("save failed for %d channel(s)", failed)
 		return
 	}
+	b.saveChatHist()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	res, err := b.Store.Checkpoint(ctx, store.CheckpointTruncate)

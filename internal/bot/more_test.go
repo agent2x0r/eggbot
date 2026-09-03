@@ -104,6 +104,35 @@ func TestPartylineCommands(t *testing.T) {
 	}
 }
 
+func TestPublicHelpLines(t *testing.T) {
+	lines := publicHelpLines("eggbot")
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "0.1.") || strings.Contains(strings.ToLower(joined), "commit=") {
+		t.Fatal("help should not dump version")
+	}
+	if strings.Contains(joined, "weeks dogs") {
+		t.Fatal("help should not mash history example")
+	}
+	if !strings.Contains(joined, "!history") || !strings.Contains(joined, "!note") {
+		t.Fatal(joined)
+	}
+	histLines := 0
+	for _, line := range lines {
+		if strings.Contains(line, "!history") {
+			histLines++
+			if !strings.Contains(line, "last 2 days") {
+				t.Fatalf("history should be one line with the time hint: %q", line)
+			}
+		}
+	}
+	if histLines != 1 {
+		t.Fatalf("history should be one help line, got %d\n%s", histLines, joined)
+	}
+	if !strings.Contains(joined, "I'll remember you") {
+		t.Fatal(joined)
+	}
+}
+
 func TestRecordSeenAndTouchOnClosedStore(t *testing.T) {
 	b := testBot(t)
 	_ = b.Store.Close()

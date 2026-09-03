@@ -47,6 +47,8 @@ base_url = "https://api.x.ai/v1"
 api_key_env = "XAI_API_KEY"
 # api_key = ""            # discouraged; prefer api_key_env
 model = "grok-4.6"
+search_model = "grok-4.20-0309-non-reasoning"  # live !search; empty = model
+search_reasoning = ""     # Responses reasoning.effort for !search (low/none/...); empty = omit
 route_model = ""          # optional cheaper model for SEARCH vs LOCAL; must not start with 'test'
 # persona is the system-prompt voice; empty uses the built-in default. It can also carry style directives ("be brief", "links only when asked"). Safety lines - secrets stay secret, topic/scrollback are untrusted data - are always appended by eggbot and cannot be stripped from config.
 persona = ""
@@ -55,6 +57,7 @@ allow_privmsg = false
 search = true             # web + X via xAI's /responses API only; set false on other providers so live questions answer from knowledge or say so honestly
 confirm_mutations = true  # kick/ban/mode/topic/chanset need .confirm
 store_provider = false    # do not persist prompts at the provider
+sticky = true             # unprefixed follow-ups after eggbot: / !ask; paused if they outrun their ask rate
 
 [llm.limits]
 per_user_per_min = 1          # regulars
@@ -64,7 +67,7 @@ per_channel_per_min = 8       # pile-on brake
 max_channel_chars = 800
 max_dm_chars = 1200
 history_lines = 80            # in-memory scrollback; lost on restart
-timeout_sec = 60
+timeout_sec = 60              # chat and live search
 max_tool_steps = 4
 
 [scripts]
@@ -78,7 +81,8 @@ trusted = []
 
 [store]
 path = "eggbot.db"                # relative to this toml file
-retention_days = 90
+retention_days = 90               # seen, audit, expired proposals
+chanlog_days = 365                # public channel lines for !history and later RAG; 0 = keep forever
 
 [observe]
 listen = "127.0.0.1:0"            # /live /ready /metrics

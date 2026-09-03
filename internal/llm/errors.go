@@ -6,7 +6,34 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 )
+
+// ErrStale means a newer ask from this nick replaced this one; do not speak the reply.
+var ErrStale = errors.New("stale ask")
+
+// RateLimitError is a per-user or per-channel ask cap. RetryAt is when a slot opens.
+type RateLimitError struct {
+	Scope   string // "user" or "channel"
+	Limit   int
+	RetryAt time.Time
+	msg     string
+}
+
+func (e *RateLimitError) Error() string {
+	if e == nil {
+		return ""
+	}
+	return e.msg
+}
+
+func IsRateLimited(err error) (*RateLimitError, bool) {
+	var r *RateLimitError
+	if errors.As(err, &r) {
+		return r, true
+	}
+	return nil, false
+}
 
 // ProviderError is an HTTP failure from the LLM provider.
 type ProviderError struct {
@@ -58,7 +85,7 @@ func friendlyErr(err error) error {
 		return nil
 	}
 	if isTimeout(err) {
-		return fmt.Errorf("search timed out — try again, or ask a shorter question")
+		return fmt.Errorf("that took too long — try again, or ask a shorter question")
 	}
 	var pe *ProviderError
 	if errors.As(err, &pe) {

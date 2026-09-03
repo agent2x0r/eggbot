@@ -7,7 +7,9 @@ make
 ./eggbot -version
 ```
 
-SIGINT and SIGTERM wait for IRC, scripts, and SQLite to finish before exit.
+SIGINT and SIGTERM wait for IRC, scripts, and SQLite to finish before exit. Channel scrollback used by the model is an 80-line RAM buffer, snapshotted to `kv` (`llm.chat_hist`) on the 30s flush, `.save`, and shutdown. A restart within 5 minutes reloads it; after that the RAM buffer starts empty.
+
+Public channel lines (not DMs, not password slips) are also appended to SQLite `chanlog` as they arrive. That table is for `!history` and later RAG. It is kept for `store.chanlog_days` (default 365). `.seen` is still one last event per nick and uses `store.retention_days` (90).
 
 ## Health
 

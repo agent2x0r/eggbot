@@ -29,8 +29,14 @@ func TestRespondExtractsTextAndSearchTool(t *testing.T) {
 				sawX = true
 			}
 		}
-		if !sawX {
-			t.Error("expected x_search tool")
+		if sawX {
+			t.Error("x_search should stay off unless asked")
+		}
+		if _, ok := req["reasoning"]; ok {
+			t.Errorf("empty search_reasoning must omit reasoning, got %v", req["reasoning"])
+		}
+		if n, _ := req["max_output_tokens"].(float64); int(n) != searchMaxOutTokens {
+			t.Errorf("max_output_tokens=%v want %d", req["max_output_tokens"], searchMaxOutTokens)
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"id": "resp_1",
@@ -47,12 +53,67 @@ func TestRespondExtractsTextAndSearchTool(t *testing.T) {
 	}))
 	defer srv.Close()
 	c := NewClient(srv.URL, "test", "grok-4.6", 0)
-	text, calls, id, err := c.Respond([]Message{{Role: "user", Content: "find rustirc"}}, nil, true, "")
+	text, calls, id, err := c.Respond([]Message{{Role: "user", Content: "find rustirc"}}, nil, true, false, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !sawSearch || text == "" || id != "resp_1" || len(calls) != 0 {
 		t.Fatalf("search=%v text=%q id=%s calls=%d", sawSearch, text, id, len(calls))
+	}
+}
+
+func TestRespondUsesSearchModelAndReasoningFromConfig(t *testing.T) {
+	var model string
+	var effort any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		model, _ = req["model"].(string)
+		if rsn, ok := req["reasoning"].(map[string]any); ok {
+			effort = rsn["effort"]
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "s", "output": []any{}})
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.URL, "test", "chat-model", 0)
+	c.SearchModel = "search-model"
+	c.SearchReasoning = "low"
+	if _, _, _, err := c.Respond([]Message{{Role: "user", Content: "q"}}, nil, true, false, ""); err != nil {
+		t.Fatal(err)
+	}
+	if model != "search-model" || effort != "low" {
+		t.Fatalf("model=%s effort=%v", model, effort)
+	}
+}
+
+func TestRespondAddsXSearchWhenAsked(t *testing.T) {
+	var sawX bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var req map[string]any
+		_ = json.Unmarshal(body, &req)
+		for _, t0 := range req["tools"].([]any) {
+			m, _ := t0.(map[string]any)
+			if m["type"] == "x_search" {
+				sawX = true
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "x", "output": []any{}})
+	}))
+	t.Cleanup(srv.Close)
+	c := NewClient(srv.URL, "test", "grok-4.6", 0)
+	if _, _, _, err := c.Respond([]Message{{Role: "user", Content: "tweet"}}, nil, true, true, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !sawX {
+		t.Fatal("expected x_search")
+	}
+}
+
+func TestWantsXSearch(t *testing.T) {
+	if wantsXSearch("chonkstep") || !wantsXSearch("latest tweet about chonkstep") {
+		t.Fatal("x search gate")
 	}
 }
 
@@ -63,7 +124,7 @@ func TestRespondRejectsHTMLError(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := NewClient(srv.URL, "test", "grok-4.6", 0)
-	_, _, _, err := c.Respond([]Message{{Role: "user", Content: "hi"}}, nil, true, "")
+	_, _, _, err := c.Respond([]Message{{Role: "user", Content: "hi"}}, nil, true, false, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}

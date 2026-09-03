@@ -12,6 +12,7 @@ import (
 
 	"github.com/ergochat/irc-go/ircmsg"
 
+	"eggbot/internal/chanlog"
 	"eggbot/internal/chanstate"
 	"eggbot/internal/config"
 	"eggbot/internal/dcc"
@@ -55,6 +56,7 @@ type Bot struct {
 	Seen    *seen.Module
 	Notes   *notes.Module
 	Quotes  *quotes.Module
+	ChanLog *chanlog.Module
 	Scripts *script.Engine
 	Lua     *scriplua.Host
 	Py      *scriptpy.Host
@@ -73,6 +75,8 @@ type Bot struct {
 	cancel       context.CancelFunc
 	ctx          context.Context
 	proposals    map[string]*Proposal
+	sticky       *stickyMap
+	nowFn        func() time.Time
 }
 
 func New(cfg *config.Config, log *slog.Logger) (*Bot, error) {
@@ -91,11 +95,13 @@ func New(cfg *config.Config, log *slog.Logger) (*Bot, error) {
 		Seen:         seen.New(st),
 		Notes:        notes.New(st),
 		Quotes:       quotes.New(st),
+		ChanLog:      chanlog.New(st),
 		Started:      time.Now(),
 		authAttempts: make(map[string][]time.Time),
 		helloHits:    make(map[string][]time.Time),
 		dccSlots:     make(chan struct{}, 2),
 		proposals:    map[string]*Proposal{},
+		sticky:       newSticky(),
 	}
 	b.Net = ircstate.New(b.IRC.ISupport())
 	if err := b.Users.SeedOwners(); err != nil {
@@ -120,6 +126,7 @@ func New(cfg *config.Config, log *slog.Logger) (*Bot, error) {
 	sdk := cfg.Scripts.PythonDir
 	b.Py = scriptpy.New(b.Scripts, cfg.Scripts.PythonBin, sdk)
 	b.LLM = llm.NewBrain(cfg, log, b, b.toolDefs())
+	b.restoreChatHist()
 	b.GitHub = github.NewClient("", "", 8*time.Second)
 	b.GitHub.UserAgent = Version
 	b.PL = &partyline.Server{
@@ -215,6 +222,7 @@ func (b *Bot) Close() {
 		b.Lua.Close()
 		b.Py.Close()
 		if b.LLM != nil {
+			b.saveChatHist()
 			b.LLM.Close()
 		}
 		done := make(chan struct{})
@@ -470,6 +478,7 @@ func (b *Bot) onPrivmsg(msg ircmsg.Message) {
 				b.LLM.Remember(target, o.Nick, text)
 			}
 		}
+		b.logChat(target, o.Nick, text)
 		b.Protect.OnPrivmsg(target, o)
 		b.Scripts.Dispatch("pub", script.Event{
 			Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Account: o.Account,
@@ -496,6 +505,7 @@ func (b *Bot) onAction(o origin.Origin, u *userfile.User, target, text string) {
 	if c := b.Chans.Get(target); c != nil && c.Chanset.Has("ai") {
 		b.LLM.Remember(target, o.Nick, "/me "+text)
 	}
+	b.logChat(target, o.Nick, "/me "+text)
 	b.Protect.OnPrivmsg(target, o)
 	b.Scripts.Dispatch("pubm", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: target, Text: "\x01ACTION " + text + "\x01",
@@ -635,6 +645,9 @@ func (b *Bot) onPart(msg ircmsg.Message) {
 	if recordSeen {
 		b.recordSeen(o.Nick, o.Handle, o.Account, o.NUH(), ch, "parting", origin.Last(msg))
 	}
+	if b.sticky != nil {
+		b.sticky.drop(ch, o.Nick)
+	}
 	b.Scripts.Dispatch("part", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: ch, Text: origin.Last(msg),
 	})
@@ -649,6 +662,9 @@ func (b *Bot) onQuit(msg ircmsg.Message) {
 	}
 	for _, c := range b.Chans.All() {
 		b.Chans.RemoveMember(c.Name, o.Nick)
+	}
+	if b.sticky != nil {
+		b.sticky.dropNick(o.Nick)
 	}
 	b.Scripts.Dispatch("sign", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Text: origin.Last(msg),
@@ -666,6 +682,9 @@ func (b *Bot) onKick(msg ircmsg.Message) {
 	b.Protect.OnKick(ch, o.Nick, victim, reason)
 	if b.channelSetting(ch, "seen") {
 		b.recordSeen(victim, "", "", "", ch, "kicked", reason)
+	}
+	if b.sticky != nil {
+		b.sticky.drop(ch, victim)
 	}
 	b.Scripts.Dispatch("kick", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: ch, Text: victim + " " + reason,
@@ -715,6 +734,9 @@ func (b *Bot) onNick(msg ircmsg.Message) {
 	b.PL.Consolef('n', "nick %s -> %s", o.Nick, neu)
 	if recordSeen {
 		b.recordSeen(neu, o.Handle, o.Account, hostmask.Normalize(neu, o.User, o.Host), "", "nicking", o.Nick)
+	}
+	if b.sticky != nil {
+		b.sticky.onNick(o.Nick, neu)
 	}
 	b.Protect.OnNick(o, neu)
 	b.Scripts.Dispatch("nick", script.Event{

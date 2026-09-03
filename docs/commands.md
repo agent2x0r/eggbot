@@ -44,7 +44,7 @@ Query is `/msg eggbot …`. Some commands also work in channel with `!`.
 | `pass <current> <new>` | query | change an existing password |
 | `ident <handle> <password>` | query | add this host to a handle |
 | `whoami` | query | handle and flags |
-| `help` | query | short list |
+| `help` / `!help` | query or channel | what the bot can do |
 | `op #channel` | query | request +o if you have +o |
 | `invite #channel` | query | invite yourself |
 | `chat` | query | remind telnet address |
@@ -52,7 +52,9 @@ Query is `/msg eggbot …`. Some commands also work in channel with `!`.
 | `note <handle> <text>` | query or `!note` | leave a note |
 | `notes` | query | read your notes |
 | `catchup` / `recap` | query or `!catchup` | recap (channel if used there) |
-| `!ask` / `!ai` | channel | LLM (needs `+ai`) |
+| `!ask` / `!ai` | channel | LLM (needs `+ai`). Follow-ups from that nick go to the model until the window idles (~120s) or the model drops it. |
+| `!search <q>` | channel | force a live web/X lookup (`+ai`) |
+| `!history <words>` | channel | search saved channel chat; optional time window (`last 2 days`, `3 weeks ago`) |
 | `!quote` | channel | random or search |
 | `eggbot: …` | channel | LLM (needs `+ai`) |
 

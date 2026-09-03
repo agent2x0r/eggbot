@@ -91,7 +91,10 @@ On a channel with `+ai`:
 - `eggbot: capital of France` — answered by the model without web search
 - `eggbot: is chonkline on GitHub?` — may use web search
 - `!ask` / `!ai` — same as addressing the nick
-- `!catchup` — recap of channel text this process has seen since it started
+- After a prefix or `!ask`, that nick’s following lines go to the model until they go idle (~120s) or the model drops the window because they are talking to someone else. If they outrun `llm.limits.per_user_per_min`, eggbot holds the last question and picks it up when the minute resets (`llm.sticky`, default on).
+- `!help` lists features. `!search` forces a live lookup. `!history` searches saved channel chat (`!history last 3 weeks dogs`). `!note <handle> <text>` leaves a note.
+- Channel scrollback for the model is kept in RAM (default 80 lines) and snapshotted to the database so a restart within 5 minutes can continue the same context. Longer downtime still starts empty. Full public lines are also stored in `chanlog` for a year (`store.chanlog_days = 365`) so `!history` and later RAG have something to read.
+- `!catchup` — recap of channel text this process has seen since it started (plus a fresh snapshot if the restart was under 5 minutes)
 
 Partyline `.ai` is limited to owners. It reports whether a key is configured, not the key itself.
 

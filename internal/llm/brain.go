@@ -1,6 +1,7 @@
 // Package llm is the bot brain: OpenAI-compatible chat, optional xAI web/X search,
 // a SEARCH-vs-LOCAL router, a per-nick FIFO ask queue, and in-memory channel
-// scrollback (lost on restart). Citations from the Responses API are stripped
+// scrollback (refilled from a SQLite snapshot after restarts shorter than
+// ChatHistMaxAge). Citations from the Responses API are stripped
 // before anything is sent to IRC.
 package llm
 
@@ -8,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +46,7 @@ type Brain struct {
 	inflight  map[string]bool
 	queue     map[string][]askJob
 	searchAck map[string]bool // one "Searching..." per busy session
+	gen       map[string]uint64
 	jobs      int
 	closed    bool
 	cancel    context.CancelFunc
@@ -70,6 +73,8 @@ func NewBrain(cfg *config.Config, log *slog.Logger, actor Actor, tools []ToolDef
 	c := NewClient(cfg.LLM.BaseURL, cfg.LLM.APIKey, cfg.LLM.Model, cfg.LLMTimeout())
 	c.Ctx = ctx
 	c.StoreProvider = cfg.LLM.StoreProvider
+	c.SearchModel = cfg.LLM.SearchModel
+	c.SearchReasoning = cfg.LLM.SearchReasoning
 	return &Brain{
 		Cfg: cfg, Client: c, Log: log, Actor: actor, Tools: tools,
 		hist:      map[string][]HistoryLine{},
@@ -78,6 +83,7 @@ func NewBrain(cfg *config.Config, log *slog.Logger, actor Actor, tools []ToolDef
 		inflight:  map[string]bool{},
 		queue:     map[string][]askJob{},
 		searchAck: map[string]bool{},
+		gen:       map[string]uint64{},
 		cancel:    cancel,
 	}
 }
@@ -90,7 +96,10 @@ func (b *Brain) ReplaceConfig(cfg *config.Config) {
 		b.Client.BaseURL = strings.TrimRight(cfg.LLM.BaseURL, "/")
 		b.Client.APIKey = cfg.LLM.APIKey
 		b.Client.Model = cfg.LLM.Model
+		b.Client.SearchModel = cfg.LLM.SearchModel
+		b.Client.SearchReasoning = cfg.LLM.SearchReasoning
 		b.Client.StoreProvider = cfg.LLM.StoreProvider
+		b.Client.HTTP = &http.Client{Timeout: cfg.LLMTimeout()}
 	}
 }
 
@@ -149,7 +158,8 @@ type AskReq struct {
 	Persona  string
 	Prompt   string
 	Topic    string
-	Dest     string // DestChannel, DestDM, DestCatchup
+	Dest     string // DestChannel, DestDM, DestCatchup, DestSearch
+	gen      uint64 // per-nick generation; a newer ask makes this one stale
 	Helpful  bool   // seen/quote/dm tools
 	Ops      bool   // kick/ban/topic tools
 	Search   bool   // xAI web_search (server-side)
@@ -175,24 +185,37 @@ func (b *Brain) AskReq(req AskReq) (string, error) {
 	}
 	key := flightKey(req)
 	b.mu.Lock()
+	b.gen[key]++
+	req.gen = b.gen[key]
 	if b.inflight[key] {
-		if len(b.queue[key]) >= maxAskQueue {
-			b.jobs--
-			b.mu.Unlock()
-			return "", fmt.Errorf("too many questions at once")
+		for _, old := range b.queue[key] {
+			if b.jobs > 0 {
+				b.jobs--
+			}
+			old.done <- askResult{err: ErrStale}
 		}
 		job := askJob{req: req, done: make(chan askResult, 1)}
-		b.queue[key] = append(b.queue[key], job)
+		b.queue[key] = []askJob{job}
 		b.mu.Unlock()
 		res := <-job.done
 		return res.text, res.err
 	}
 	b.inflight[key] = true
+	myGen := req.gen
 	b.mu.Unlock()
 
 	text, err := b.answer(req)
 	b.finishFlight(key)
+	if b.stale(key, myGen) {
+		return "", ErrStale
+	}
 	return text, err
+}
+
+func (b *Brain) stale(key string, gen uint64) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return gen != 0 && b.gen[key] != gen
 }
 
 // Admit reserves rate and global capacity before the optional router makes an
@@ -263,8 +286,12 @@ func (b *Brain) ClaimSearchAck(handle, nick string) bool {
 
 func (b *Brain) runQueued(key string, job askJob) {
 	text, err := b.answer(job.req)
-	job.done <- askResult{text: text, err: err}
 	b.finishFlight(key)
+	if b.stale(key, job.req.gen) {
+		job.done <- askResult{err: ErrStale}
+		return
+	}
+	job.done <- askResult{text: text, err: err}
 }
 
 func (b *Brain) answer(req AskReq) (string, error) {
@@ -276,6 +303,7 @@ func (b *Brain) answer(req AskReq) (string, error) {
 	ghNote, ghOK := b.lookupGitHub(req, hist)
 	useSearch := req.Search && req.Dest != DestCatchup && !ghOK
 	msgs := b.buildMessages(req, hist, ghNote, useSearch)
+	searchX := useSearch && wantsXSearch(req.Prompt)
 
 	var specs []ToolSpec
 	var allowed []ToolDef
@@ -301,9 +329,19 @@ func (b *Brain) answer(req AskReq) (string, error) {
 	if steps <= 0 {
 		steps = 4
 	}
+	if useSearch {
+		// Live lookup is one xAI /responses round with server-side web search.
+		// Extra bot-tool loops are what made !search sit on "Searching..." for a minute.
+		specs = nil
+		allowed = nil
+		steps = 0
+	}
 	maxChars := b.Cfg.LLM.Limits.MaxChannelChars
 	if req.Dest == DestDM || req.Dest == DestCatchup {
 		maxChars = b.Cfg.LLM.Limits.MaxDMChars
+	}
+	if req.Dest == DestSearch && (maxChars <= 0 || maxChars > searchMaxChars) {
+		maxChars = searchMaxChars
 	}
 	if maxChars <= 0 {
 		maxChars = b.Cfg.LLM.Limits.MaxOutputChars
@@ -326,11 +364,11 @@ func (b *Brain) answer(req AskReq) (string, error) {
 				}
 				in = extras
 			}
-			content, calls, prevID, err = b.Client.Respond(in, specs, true, prevID)
+			content, calls, prevID, err = b.Client.Respond(in, specs, true, searchX, prevID)
 		} else {
 			var msg Message
 			maxTok := 0
-			if req.Dest == DestChannel {
+			if req.Dest == DestChannel || req.Dest == DestSearch {
 				maxTok = 180
 			}
 			msg, err = b.Client.chat(b.Client.Model, msgs, specs, maxTok)
@@ -338,7 +376,7 @@ func (b *Brain) answer(req AskReq) (string, error) {
 		}
 		if err != nil {
 			if b.Log != nil && useSearch {
-				b.Log.Warn("live lookup failed", "err", err)
+				b.Log.Error("live lookup failed", "err", err, "step", i)
 			}
 			return "", friendlyErr(err)
 		}
@@ -366,6 +404,16 @@ func (b *Brain) answer(req AskReq) (string, error) {
 		}
 	}
 	return "i ran out of tool steps", nil
+}
+
+func wantsXSearch(prompt string) bool {
+	s := strings.ToLower(prompt)
+	for _, w := range []string{"twitter", "tweet", "x.com", " on x", "x post", "x search"} {
+		if strings.Contains(s, w) {
+			return true
+		}
+	}
+	return false
 }
 
 func flightKey(req AskReq) string {
@@ -416,10 +464,11 @@ func (b *Brain) rateOK(req AskReq) error {
 		userLimit = b.Cfg.LLM.Limits.OpPerMin
 	}
 	if userLimit > 0 && len(b.userN[uk]) >= userLimit {
+		msg := fmt.Sprintf("rate limit (%d/min)", userLimit)
 		if userLimit <= 1 {
-			return fmt.Errorf("one AI ask per minute — owners/ops get more")
+			msg = "one AI ask per minute — owners/ops get more"
 		}
-		return fmt.Errorf("rate limit (%d/min)", userLimit)
+		return &RateLimitError{Scope: "user", Limit: userLimit, RetryAt: nextSlot(b.userN[uk], userLimit), msg: msg}
 	}
 	ch := irccase.Fold(req.Channel)
 	if ch == "" {
@@ -427,7 +476,7 @@ func (b *Brain) rateOK(req AskReq) error {
 	}
 	channelLimit := b.Cfg.LLM.Limits.PerChannelPerMin
 	if channelLimit > 0 && len(b.chanN[ch]) >= channelLimit {
-		return fmt.Errorf("channel is AI-busy, try in a minute")
+		return &RateLimitError{Scope: "channel", Limit: channelLimit, RetryAt: nextSlot(b.chanN[ch], channelLimit), msg: "channel is AI-busy, try in a minute"}
 	}
 	if userLimit > 0 && len(b.userN[uk]) == 0 && len(b.userN) >= maxRateKeys {
 		return fmt.Errorf("AI is busy, try again shortly")
@@ -442,6 +491,17 @@ func (b *Brain) rateOK(req AskReq) error {
 		b.chanN[ch] = append(b.chanN[ch], now)
 	}
 	return nil
+}
+
+func nextSlot(entries []time.Time, limit int) time.Time {
+	if limit <= 0 || len(entries) == 0 {
+		return time.Now().Add(time.Minute)
+	}
+	i := 0
+	if len(entries) > limit {
+		i = len(entries) - limit
+	}
+	return entries[i].Add(time.Minute)
 }
 
 func pruneRateMap(m map[string][]time.Time, cutoff time.Time) {

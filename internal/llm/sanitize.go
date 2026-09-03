@@ -33,6 +33,31 @@ var (
 
 func NormalizeIRC(s string) string { return normalizeIRC(s) }
 
+// SilentReply is true when the model chose not to speak on IRC.
+func SilentReply(s string) bool {
+	t := strings.TrimSpace(s)
+	t = strings.Trim(t, `"'`)
+	if t == "" {
+		return true
+	}
+	switch strings.ToUpper(t) {
+	case "SILENT", "NO_REPLY", "NOREPLY":
+		return true
+	}
+	return false
+}
+
+// DropContext is true when the model wants this nick's sticky window closed.
+func DropContext(s string) bool {
+	t := strings.TrimSpace(s)
+	t = strings.Trim(t, `"'`)
+	switch strings.ToUpper(t) {
+	case "DROP", "DROP_CONTEXT":
+		return true
+	}
+	return false
+}
+
 func stripCitations(s string) string {
 	s = reGrokRender.ReplaceAllString(s, "")
 	s = reGrokRenderEmpty.ReplaceAllString(s, "")

@@ -18,6 +18,7 @@ type migration struct {
 var migrations = []migration{
 	{1, schemaV1},
 	{2, schemaV2},
+	{3, schemaV3},
 }
 
 func (s *Store) migrate() error {
@@ -147,6 +148,15 @@ func (s *Store) Purge(ctx context.Context, retentionDays int) error {
 	})
 }
 
+func (s *Store) PurgeChanlog(ctx context.Context, days int) error {
+	if days <= 0 {
+		return nil
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour).Unix()
+	_, err := s.DB.ExecContext(ctx, `DELETE FROM chanlog WHERE at < ?`, cutoff)
+	return err
+}
+
 const schemaV1 = schema
 
 const schemaV2 = `
@@ -181,4 +191,15 @@ CREATE TABLE IF NOT EXISTS hello_rate (
     n INTEGER NOT NULL,
     window_start INTEGER NOT NULL
 );
+`
+
+const schemaV3 = `
+CREATE TABLE IF NOT EXISTS chanlog (
+    id INTEGER PRIMARY KEY,
+    channel TEXT NOT NULL,
+    nick TEXT NOT NULL,
+    text TEXT NOT NULL,
+    at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chanlog_ch_at ON chanlog(channel, at);
 `

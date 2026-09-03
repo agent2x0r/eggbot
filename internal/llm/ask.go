@@ -9,6 +9,7 @@ const (
 	DestChannel = "channel"
 	DestDM      = "dm"
 	DestCatchup = "catchup"
+	DestSearch  = "search"
 )
 
 // IsCatchup reports whether the prompt is a "what did I miss" / room-recap request.

@@ -110,6 +110,44 @@ func TestPromptPutsQuestionLastWithTopic(t *testing.T) {
 	}
 }
 
+func TestSearchLookupOmitsRoomScrollback(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.LLM.APIKey = "x"
+	br := NewBrain(cfg, nil, &fakeActor{}, nil)
+	br.Remember("#lobby", "nate", "ATX 3.0 PSU transients")
+	br.Remember("#lobby", "chrisk", "memtest+")
+	req := AskReq{
+		Channel: "#lobby", Nick: "nate", Prompt: "chonkstep",
+		Topic:  "https://github.com/chonkbase/chonkbase",
+		Dest:   DestSearch,
+		Search: true,
+	}
+	hist := br.historyFor(req)
+	if len(hist) != 0 {
+		t.Fatalf("search hist %d", len(hist))
+	}
+	msgs := br.buildMessages(req, hist, "", true)
+	if len(msgs) != 2 || msgs[1].Content != "chonkstep" {
+		t.Fatalf("search msgs %+v", msgs)
+	}
+	sys := msgs[0].Content
+	if strings.Contains(sys, "ATX") || strings.Contains(sys, "chonkbase") {
+		t.Fatalf("room leaked into search: %q", sys)
+	}
+	joined := msgs[0].Content + msgs[1].Content
+	if strings.Contains(joined, "nate: chonkstep") {
+		t.Fatal("search must not prefix nick:")
+	}
+	if !strings.Contains(sys, "One or two short IRC sentences") {
+		t.Fatal("search brevity missing")
+	}
+	for _, leak := range []string{"Your build is", "commit=", "!help", "!history", "scrollback", "SILENT", "DROP"} {
+		if strings.Contains(sys, leak) {
+			t.Fatalf("search prompt still has %q: %s", leak, sys)
+		}
+	}
+}
+
 func TestFollowupRouting(t *testing.T) {
 	if !NeedsSearch("latest changelog for this IRC server on GitHub") {
 		t.Fatal("changelog")

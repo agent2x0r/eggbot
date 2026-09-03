@@ -100,12 +100,15 @@ type LLM struct {
 	APIKey           string `toml:"api_key"`
 	APIKeyEnv        string `toml:"api_key_env"`
 	Model            string `toml:"model"`
+	SearchModel      string `toml:"search_model"`     // live !search; empty = model
+	SearchReasoning  string `toml:"search_reasoning"` // Responses reasoning.effort; empty = omit
 	AllowPrivmsg     bool   `toml:"allow_privmsg"`
 	Search           bool   `toml:"search"`
 	RouteModel       string `toml:"route_model"` // cheap/fast model for SEARCH vs LOCAL
 	Persona          string `toml:"persona"`
 	StoreProvider    bool   `toml:"store_provider"`
 	ConfirmMutations bool   `toml:"confirm_mutations"`
+	Sticky           bool   `toml:"sticky"` // unprefixed follow-ups after an ask
 	Limits           Limits `toml:"limits"`
 }
 
@@ -118,7 +121,7 @@ type Limits struct {
 	MaxDMChars       int  `toml:"max_dm_chars"`
 	MaxOutputChars   int  `toml:"max_output_chars"` // fallback
 	HistoryLines     int  `toml:"history_lines"`
-	TimeoutSec       int  `toml:"timeout_sec"`
+	TimeoutSec       int  `toml:"timeout_sec"` // chat and live search
 	MaxToolSteps     int  `toml:"max_tool_steps"`
 }
 
@@ -133,6 +136,7 @@ type Scripts struct {
 type Store struct {
 	Path          string `toml:"path"`
 	RetentionDays int    `toml:"retention_days"`
+	ChanlogDays   int    `toml:"chanlog_days"` // public channel lines for !history / future RAG
 }
 
 type Log struct {
@@ -161,9 +165,12 @@ func Defaults() *Config {
 			BaseURL:          "https://api.x.ai/v1",
 			APIKeyEnv:        "XAI_API_KEY",
 			Model:            "grok-4.6",
+			SearchModel:      "grok-4.20-0309-non-reasoning",
+			SearchReasoning:  "",
 			Search:           true,
 			Persona:          DefaultPersona,
 			ConfirmMutations: true,
+			Sticky:           true,
 			StoreProvider:    false,
 			Limits: Limits{
 				PerUserPerMin:    1,
@@ -183,7 +190,7 @@ func Defaults() *Config {
 			PythonDir: "scripts/python",
 			PythonBin: "python3",
 		},
-		Store:   Store{Path: "eggbot.db", RetentionDays: 90},
+		Store:   Store{Path: "eggbot.db", RetentionDays: 90, ChanlogDays: 365},
 		Log:     Log{Level: "info"},
 		Observe: Observe{Listen: "127.0.0.1:0"},
 	}
@@ -304,6 +311,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Store.RetentionDays < 0 {
 		c.Store.RetentionDays = 0
+	}
+	if c.Store.ChanlogDays < 0 {
+		c.Store.ChanlogDays = 0
 	}
 	if c.Learn.ProductionLock {
 		c.Learn.Hello = false

@@ -130,6 +130,8 @@ func TestRateLimit(t *testing.T) {
 	}
 	if err := br.rateOK(req); err == nil {
 		t.Fatal("second should deny")
+	} else if rl, ok := IsRateLimited(err); !ok || rl.Scope != "user" || rl.RetryAt.IsZero() {
+		t.Fatalf("expected RateLimitError, got %v", err)
 	}
 	owner := AskReq{Handle: "nate", Nick: "nate", Channel: "#c", User: &userfile.User{Handle: "nate", Global: flags.Parse("n")}}
 	if err := br.rateOK(owner); err != nil {
@@ -243,11 +245,11 @@ func TestStripCitations(t *testing.T) {
 	}
 }
 
-func TestAskQueueFIFO(t *testing.T) {
+func TestNewerAskDropsOlder(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	var n int
-	var answers = []string{"one", "two", "three"}
+	var answers = []string{"one", "two"}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		n++
 		if n == 1 {
@@ -291,19 +293,20 @@ func TestAskQueueFIFO(t *testing.T) {
 		t, e := br.AskReq(AskReq{Channel: "#c", Nick: "nate", Handle: "nate", User: owner, Prompt: "q3"})
 		out[2] <- res{t, e}
 	}()
-	waitQueued(t, br, "nate", 2)
+	waitQueued(t, br, "nate", 1)
 	close(release)
 
-	got := make([]string, 3)
-	for i := 0; i < 3; i++ {
-		r := <-out[i]
-		if r.err != nil {
-			t.Fatalf("ask %d: %v", i+1, r.err)
-		}
-		got[i] = r.text
+	r0 := <-out[0]
+	r1 := <-out[1]
+	r2 := <-out[2]
+	if r0.err != ErrStale {
+		t.Fatalf("ask 1 want stale, got %q %v", r0.text, r0.err)
 	}
-	if got[0] != "one" || got[1] != "two" || got[2] != "three" {
-		t.Fatalf("fifo order %v", got)
+	if r1.err != ErrStale {
+		t.Fatalf("ask 2 want stale, got %q %v", r1.text, r1.err)
+	}
+	if r2.err != nil || r2.text != "two" {
+		t.Fatalf("ask 3 want two, got %q %v", r2.text, r2.err)
 	}
 }
 
