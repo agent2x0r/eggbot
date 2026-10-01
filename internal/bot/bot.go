@@ -66,6 +66,8 @@ type Bot struct {
 
 	mu    sync.Mutex
 	dying bool
+	// botModeSent latches the IRCv3 bot-mode claim once per connection.
+	botModeSent bool
 
 	authAttempts map[string][]time.Time
 	helloHits    map[string][]time.Time
@@ -293,6 +295,9 @@ func (b *Bot) onIRC(msg ircmsg.Message) {
 	case "001":
 		b.Net.SetSelf(b.IRC.Nick())
 		b.onWelcome()
+	case "005":
+		// 005 can follow 001; the client has already applied the tokens.
+		b.claimBotMode()
 	case "PRIVMSG":
 		b.onPrivmsg(msg)
 	case "NOTICE":
@@ -367,7 +372,35 @@ func (b *Bot) onNotice(msg ircmsg.Message) {
 	b.PL.Consolef('m', "[notice] <%s> %s", o.Nick, text)
 }
 
+// claimBotMode sets the IRCv3 bot user mode when the network advertises
+// BOT=<letter>, so other clients can recognise eggbot by the bot tag. It sends
+// at most once per connection and returns the letter it claimed, or "".
+func (b *Bot) claimBotMode() string {
+	letter, ok := b.IRC.ISupport().Get("BOT")
+	if !ok || len(letter) != 1 || !isModeLetter(letter[0]) {
+		return ""
+	}
+	b.mu.Lock()
+	if b.botModeSent {
+		b.mu.Unlock()
+		return ""
+	}
+	b.botModeSent = true
+	b.mu.Unlock()
+	b.IRC.Mode(b.IRC.Nick(), "+"+letter)
+	return letter
+}
+
+func isModeLetter(c byte) bool {
+	return c >= 'A' && c <= 'Z' || c >= 'a' && c <= 'z'
+}
+
 func (b *Bot) onWelcome() {
+	// 001 starts a new connection, so allow one claim for it.
+	b.mu.Lock()
+	b.botModeSent = false
+	b.mu.Unlock()
+	b.claimBotMode()
 	for _, c := range b.Chans.All() {
 		if !c.AutoJoin {
 			continue
