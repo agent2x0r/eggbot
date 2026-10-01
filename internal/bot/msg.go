@@ -151,7 +151,7 @@ func (b *Bot) handlePublic(o origin.Origin, u *userfile.User, channel, text stri
 		b.sticky.pause(channel, o.Nick, prompt, o, handle, time.Time{}, b.now())
 		return
 	}
-	b.goWork(func() { b.askLLM(channel, o, u, prompt, llm.DestChannel) })
+	b.goWork(func() { b.askLLMOpts(channel, o, u, prompt, llm.DestChannel, true) })
 }
 
 func (b *Bot) say(channel, text string) {
@@ -469,6 +469,18 @@ func (b *Bot) msgChat(o origin.Origin, u *userfile.User) {
 }
 
 func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt string, dest string) {
+	b.askLLMOpts(channel, o, u, prompt, dest, false)
+}
+
+// askLLMOpts is askLLM; followUp marks a sticky line sent without a prefix,
+// the only kind of turn where the model may stay quiet.
+func (b *Bot) logAskQuiet(what, channel, nick, dest, reply string) {
+	if b.Log != nil {
+		b.Log.Info("llm "+what, "channel", channel, "nick", nick, "dest", dest, "reply", reply)
+	}
+}
+
+func (b *Bot) askLLMOpts(channel string, o origin.Origin, u *userfile.User, prompt string, dest string, followUp bool) {
 	if strings.TrimSpace(prompt) == "" && dest != llm.DestCatchup {
 		if dest == llm.DestSearch && channel != "" {
 			b.say(channel, o.Nick+": search what?")
@@ -491,7 +503,7 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	}
 	req := llm.AskReq{
 		Channel: channel, Nick: o.Nick, Handle: handle, User: u,
-		Persona: persona, Prompt: prompt, Topic: b.channelTopic(channel), Dest: dest,
+		Persona: persona, Prompt: prompt, Topic: b.channelTopic(channel), Dest: dest, FollowUp: followUp,
 		Helpful: dest != llm.DestCatchup && dest != llm.DestSearch && dest != llm.DestHistory, Ops: ops && dest != llm.DestCatchup && dest != llm.DestSearch && dest != llm.DestHistory,
 	}
 	if err := b.LLM.Admit(&req); err != nil {
@@ -563,13 +575,26 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 		b.say(channel, o.Nick+": nothing useful came back")
 		return
 	}
+	quiet := llm.DropContext(reply) || llm.SilentReply(reply)
+	if quiet && !followUp && dest != llm.DestCatchup {
+		// Someone asked directly; never swallow it without a word.
+		b.logAskQuiet("explicit ask got no reply", channel, o.Nick, dest, reply)
+		if channel != "" {
+			b.say(channel, o.Nick+": I didn't get an answer for that, try again")
+		} else {
+			b.IRC.PrivmsgHelp(o.Nick, "I didn't get an answer for that, try again")
+		}
+		return
+	}
 	if llm.DropContext(reply) {
+		b.logAskQuiet("sticky window dropped", channel, o.Nick, dest, reply)
 		if b.sticky != nil && channel != "" {
 			b.sticky.drop(channel, o.Nick)
 		}
 		return
 	}
 	if llm.SilentReply(reply) {
+		b.logAskQuiet("follow-up stayed silent", channel, o.Nick, dest, reply)
 		return
 	}
 	switch dest {

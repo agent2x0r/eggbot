@@ -220,3 +220,41 @@ func TestStickyBangDoesNotFollowUp(t *testing.T) {
 		t.Fatal("!seen should not close the window")
 	}
 }
+
+func TestExplicitAskNeverSwallowedWhenModelSaysSilent(t *testing.T) {
+	var asks atomic.Int32
+	reply := "SILENT"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asks.Add(1)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": reply}}},
+		})
+	}))
+	t.Cleanup(srv.Close)
+
+	b := testBot(t)
+	b.Cfg.LLM.Enabled = true
+	b.Cfg.LLM.Sticky = true
+	b.Cfg.LLM.APIKey = "test"
+	b.Cfg.LLM.Search = false
+	b.Cfg.LLM.Limits.PerUserPerMin = 20
+	b.Cfg.LLM.Limits.PerChannelPerMin = 20
+	b.LLM.Client.BaseURL = srv.URL
+	b.LLM.Client.APIKey = "test"
+	cs, _ := flags.ParseChanSet("+ai")
+	b.Chans.LoadOrCreate("#lobby", cs, "", "", "", "")
+	b.onIRC(ircmsg.MakeMessage(nil, "eggbot!u@h", "JOIN", "#lobby"))
+	b.onIRC(ircmsg.MakeMessage(nil, "nate!n@h", "JOIN", "#lobby"))
+
+	b.onIRC(ircmsg.MakeMessage(nil, "nate!n@h", "PRIVMSG", "#lobby", "eggbot: what version are you?"))
+	waitAsks(t, &asks, 1)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if strings.Contains(b.LLM.RouteContext("#lobby", "", 8), "I didn't get an answer") {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("explicit ask vanished silently; scrollback: %q", b.LLM.RouteContext("#lobby", "", 8))
+}

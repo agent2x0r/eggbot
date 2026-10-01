@@ -167,7 +167,7 @@ func (b *Brain) buildMessages(req AskReq, hist []HistoryLine, githubNote string,
 	sys += "\nQuestions about this room — recaps, who said what, links, the topic — are answered from the scrollback. Read all of it before answering; it is the record, so pull out the threads that matter rather than dumping a transcript."
 	sys += "\nQuestions about the live world — news, people, projects, releases — need search. If search is not available, say you cannot look it up. Anything else, answer directly and briefly."
 	sys += "\nFollow-ups and corrections continue the original request: act on them, don't just acknowledge."
-	if !search {
+	if req.FollowUp && !search {
 		sys += "\nThis nick may keep talking without your prefix. Treat those lines as for you. If no IRC reply is needed, respond with exactly SILENT and nothing else. If they are clearly talking to someone else in the room — not only nick: / nick, addressing — respond with exactly DROP and nothing else so this window closes."
 	}
 	bot := "eggbot"

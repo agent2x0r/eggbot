@@ -165,6 +165,7 @@ type AskReq struct {
 	Search   bool   // xAI web_search (server-side)
 	OnStart  func() // fired when this job actually begins (not when queued)
 	Admitted bool   // rate/capacity was reserved before optional routing
+	FollowUp bool   // sticky follow-up without a prefix; only these may be SILENT or DROP
 }
 
 func (b *Brain) Ask(channel, nick, handle string, u *userfile.User, persona, prompt string, toolsOK bool) (string, error) {

@@ -196,3 +196,21 @@ func TestSearchFailureDoesNotFallback(t *testing.T) {
 		t.Fatal("must not fall back to memory chat")
 	}
 }
+
+func TestSilentOnlyOfferedForFollowUps(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.LLM.APIKey = "x"
+	br := NewBrain(cfg, nil, &fakeActor{}, nil)
+	req := AskReq{Channel: "#lobby", Nick: "nate", Prompt: "what version are you?", Dest: DestChannel}
+
+	explicit := br.buildMessages(req, nil, "", false)[0].Content
+	if strings.Contains(explicit, "SILENT") || strings.Contains(explicit, "DROP") {
+		t.Fatalf("explicit ask may not be told it can stay silent: %s", explicit)
+	}
+
+	req.FollowUp = true
+	follow := br.buildMessages(req, nil, "", false)[0].Content
+	if !strings.Contains(follow, "SILENT") || !strings.Contains(follow, "DROP") {
+		t.Fatalf("follow-up lost its SILENT/DROP instruction: %s", follow)
+	}
+}
