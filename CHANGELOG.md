@@ -1,10 +1,16 @@
 # Changelog
 
+## 0.1.3
+
+- IRCv3 bot mode: when the network advertises `BOT=<letter>` in 005, eggbot sets that user mode on itself once per connection, so other clients can recognise it by the `bot` tag.
+- Messages carrying the IRCv3 `bot` tag no longer trigger eggbot. They are still logged and recorded for scrollback, `seen`, and chat history, but get no command handling, script events, CTCP replies, or help notices. This stops bot-to-bot reply loops.
+- Natural-language `!history` questions match keywords (not the whole sentence), scan the full time window, and answer from those saved lines only.
+
 ## 0.1.2
 
 - After `eggbot:` or `!ask`, that nick’s later lines go to the model without a keyword filter until the window idles (120s) or the model replies DROP because they are talking to someone else. SILENT stays quiet without closing. Hitting the ask rate limit pauses the last question and picks it up when a slot opens (`llm.sticky`, default on).
 - Live `!search` is one web lookup, same 60s budget as chat (`llm.limits.timeout_sec`). Lookup model and reasoning effort come from `llm.search_model` / `llm.search_reasoning` (empty reasoning omits the field). Chat stays `llm.model`. `!search` does not send room scrollback, so it cannot answer an earlier conversation. A newer ask from the same nick drops the old reply instead of printing it late. Channel search replies are one or two short sentences (capped). X/Twitter search only if the question is about posts there. Empty results say so instead of going quiet.
-- `!help`, `!search`, and `!history` (search this channel's saved chat by words, optional time window, one help line). Natural-language `!history` questions match keywords (not the whole sentence), scan the full time window, and answer from those saved lines only. `!note <handle> <text>` is documented there; notes are still by handle.
+- `!help`, `!search`, and `!history` (search this channel's saved chat by words, optional time window, one help line). `!note <handle> <text>` is documented there; notes are still by handle.
 - Public channel lines are stored in SQLite `chanlog` (365 days by default, `store.chanlog_days`) for !history and later RAG. This is separate from the 80-line RAM buffer and from `.seen`.
 - Channel scrollback for the model is snapshotted to SQLite and reloaded after a restart shorter than 5 minutes; longer downtime still starts with an empty RAM buffer.
 
