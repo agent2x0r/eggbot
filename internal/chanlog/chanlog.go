@@ -3,6 +3,7 @@ package chanlog
 
 import (
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -56,30 +57,56 @@ func (m *Module) Search(channel, query string, now time.Time) ([]Line, error) {
 	channel = irccase.Fold(channel)
 	from, to, words := ParseQuery(query, now)
 	rows, err := m.st.DB.Query(
-		`SELECT nick, text, at FROM chanlog WHERE channel = ? AND at >= ? AND at <= ? ORDER BY at DESC LIMIT 200`,
+		`SELECT nick, text, at FROM chanlog WHERE channel = ? AND at >= ? AND at <= ? ORDER BY at DESC`,
 		channel, from.Unix(), to.Unix(),
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Line
+	type scored struct {
+		line  Line
+		score int
+	}
+	var hit []scored
+	qfold := strings.ToLower(strings.TrimSpace(query))
 	for rows.Next() {
 		var n, t string
 		var ts int64
 		if err := rows.Scan(&n, &t, &ts); err != nil {
 			return nil, err
 		}
-		if !matchWords(t, words) {
+		low := strings.ToLower(strings.TrimSpace(t))
+		if strings.HasPrefix(low, "!history") {
 			continue
 		}
-		out = append(out, Line{Nick: n, Text: t, At: time.Unix(ts, 0)})
-		if len(out) >= maxReturn {
-			break
+		if qfold != "" && (low == qfold || (len(qfold) >= 24 && strings.Contains(low, qfold))) {
+			continue
 		}
+		score := matchScore(t, words)
+		if score <= 0 {
+			continue
+		}
+		hit = append(hit, scored{Line{Nick: n, Text: t, At: time.Unix(ts, 0)}, score})
 	}
-	reverseLines(out)
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(hit, func(i, j int) bool {
+		if hit[i].score != hit[j].score {
+			return hit[i].score > hit[j].score
+		}
+		return hit[i].line.At.After(hit[j].line.At)
+	})
+	if len(hit) > maxReturn {
+		hit = hit[:maxReturn]
+	}
+	out := make([]Line, len(hit))
+	for i, h := range hit {
+		out[i] = h.line
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].At.Before(out[j].At) })
+	return out, nil
 }
 
 func Format(lines []Line) string {
@@ -126,18 +153,36 @@ func ParseQuery(query string, now time.Time) (from, to time.Time, words []string
 		}
 		q = reAgo.ReplaceAllString(q, " ")
 	}
+	seen := map[string]bool{}
 	for _, w := range strings.Fields(strings.ToLower(q)) {
 		w = strings.TrimFunc(w, func(r rune) bool { return unicode.IsPunct(r) })
-		if len(w) < 3 {
+		if len(w) < 3 || stopWord[w] || seen[w] {
 			continue
 		}
-		switch w {
-		case "discussed", "discussing", "topic", "about", "the", "and", "for":
-			continue
-		}
+		seen[w] = true
 		words = append(words, w)
 	}
 	return from, to, words
+}
+
+var stopWord = map[string]bool{
+	"about": true, "and": true, "the": true, "for": true, "discussed": true, "discussing": true, "topic": true,
+	"you": true, "your": true, "yours": true, "remember": true, "recall": true, "said": true, "say": true,
+	"had": true, "has": true, "have": true, "how": true, "much": true, "many": true, "what": true, "when": true,
+	"where": true, "which": true, "who": true, "whom": true, "this": true, "that": true, "these": true, "those": true,
+	"talked": true, "talking": true, "talk": true, "other": true, "day": true, "days": true, "just": true, "like": true,
+	"was": true, "were": true, "been": true, "being": true, "will": true, "would": true, "could": true, "should": true,
+	"want": true, "know": true, "think": true, "well": true, "yeah": true, "really": true, "some": true, "more": true,
+	"from": true, "with": true, "they": true, "them": true, "then": true, "than": true, "also": true, "into": true,
+	"over": true, "only": true, "even": true, "back": true, "here": true, "there": true, "come": true, "came": true,
+	"very": true, "did": true, "does": true, "doing": true, "got": true, "get": true, "any": true, "can": true,
+	"our": true, "out": true, "all": true, "but": true, "not": true, "are": true, "its": true, "it's": true,
+}
+
+var wordExpand = map[string][]string{
+	"storage": {"storage", "drive", "drives", "disk", "disks", "ssd", "nvme", "hdd", "tb", "gb", "array"},
+	"drive":   {"drive", "drives", "disk", "ssd", "nvme", "hdd", "tb", "array"},
+	"memory":  {"memory", "ram", "ddr", "gb"},
 }
 
 func durationN(num, unit string) time.Duration {
@@ -159,21 +204,29 @@ func durationN(num, unit string) time.Duration {
 	}
 }
 
-func matchWords(text string, words []string) bool {
+func matchScore(text string, words []string) int {
 	if len(words) == 0 {
-		return true
+		return 1
 	}
 	low := strings.ToLower(text)
+	n := 0
 	for _, w := range words {
-		if !strings.Contains(low, w) {
-			return false
+		if wordHits(low, w) {
+			n++
 		}
 	}
-	return true
+	return n
 }
 
-func reverseLines(s []Line) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
+func wordHits(low, w string) bool {
+	alts := wordExpand[w]
+	if len(alts) == 0 {
+		alts = []string{w}
 	}
+	for _, a := range alts {
+		if strings.Contains(low, a) {
+			return true
+		}
+	}
+	return false
 }

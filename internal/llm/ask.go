@@ -10,6 +10,7 @@ const (
 	DestDM      = "dm"
 	DestCatchup = "catchup"
 	DestSearch  = "search"
+	DestHistory = "history"
 )
 
 // IsCatchup reports whether the prompt is a "what did I miss" / room-recap request.

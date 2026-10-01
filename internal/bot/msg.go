@@ -105,7 +105,6 @@ func (b *Bot) handlePublic(o origin.Origin, u *userfile.User, channel, text stri
 			}
 		case "history":
 			if c != nil && c.Chanset.Has("ai") && c.Member(o.Nick) != nil {
-				b.openSticky(channel, o, u)
 				b.goWork(func() { b.askHistory(channel, o, u, args) })
 			}
 		case "catchup", "summary", "recap":
@@ -215,10 +214,9 @@ func (b *Bot) askHistory(channel string, o origin.Origin, u *userfile.User, quer
 		b.say(channel, o.Nick+": no matching history")
 		return
 	}
-	prompt := "The user asked about this channel's history: " + strings.TrimSpace(query) +
-		"\n\nMatching untrusted log lines:\n" + chanlog.Format(lines) +
-		"\nAnswer from those lines only. If they don't cover it, say so."
-	b.askLLM(channel, o, u, prompt, llm.DestCatchup)
+	prompt := "Question: " + strings.TrimSpace(query) +
+		"\n\nSaved channel lines:\n" + chanlog.Format(lines)
+	b.askLLM(channel, o, u, prompt, llm.DestHistory)
 }
 
 func (b *Bot) pubSeen(from, who string, reply func(string)) {
@@ -494,7 +492,7 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	req := llm.AskReq{
 		Channel: channel, Nick: o.Nick, Handle: handle, User: u,
 		Persona: persona, Prompt: prompt, Topic: b.channelTopic(channel), Dest: dest,
-		Helpful: dest != llm.DestCatchup && dest != llm.DestSearch, Ops: ops && dest != llm.DestCatchup && dest != llm.DestSearch,
+		Helpful: dest != llm.DestCatchup && dest != llm.DestSearch && dest != llm.DestHistory, Ops: ops && dest != llm.DestCatchup && dest != llm.DestSearch && dest != llm.DestHistory,
 	}
 	if err := b.LLM.Admit(&req); err != nil {
 		if (dest == llm.DestChannel || dest == llm.DestSearch) && channel != "" {
@@ -522,7 +520,7 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	search := false
 	if forceSearch && b.Cfg.LLM.Search {
 		search = true
-	} else if dest != llm.DestCatchup && dest != llm.DestDM && dest != llm.DestSearch && b.Cfg.LLM.Search {
+	} else if dest != llm.DestCatchup && dest != llm.DestDM && dest != llm.DestSearch && dest != llm.DestHistory && b.Cfg.LLM.Search {
 		search = b.LLM.Route(prompt, b.LLM.RouteContext(channel, req.Topic, 8)) == llm.RouteSearch
 	}
 	req.Search = search
@@ -580,7 +578,7 @@ func (b *Bot) askLLM(channel string, o origin.Origin, u *userfile.User, prompt s
 	default:
 		if channel != "" {
 			b.say(channel, o.Nick+": "+reply)
-			if dest == llm.DestChannel || dest == llm.DestSearch {
+			if dest == llm.DestChannel || dest == llm.DestSearch || dest == llm.DestHistory {
 				b.openSticky(channel, o, u)
 				if b.sticky != nil {
 					b.sticky.touchReply(channel, o.Nick, b.now())

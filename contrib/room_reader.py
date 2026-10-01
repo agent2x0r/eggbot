@@ -4,11 +4,13 @@
 State machine (checked every 5 minutes by systemd):
   - Last #lobby chat older than 90 min -> HOLD
   - First chat after that silence      -> start a 60-min clock
-  - Clock fires while room still alive -> ask xAI, .say #lobby via partyline
-  - After speaking, the 60-min clock starts again (hourly while the room is live)
+  - Clock fires while room still alive -> ask xAI, then either .say #lobby
+    or (audit mode) append the would-say line to room-reader-audit.jsonl
+  - After a send or audit write, the 60-min clock starts again
 
-Partyline login uses EGGBOT_PL_HANDLE (default owners-nick-here) and
-EGGBOT_PL_PASSWORD. The password is never logged.
+Audit mode is the default (ROOM_READER_AUDIT=1). Set ROOM_READER_AUDIT=0
+to actually speak. Partyline login uses EGGBOT_PL_HANDLE (default
+owners-nick-here) and EGGBOT_PL_PASSWORD. The password is never logged.
 """
 from __future__ import annotations
 
@@ -31,12 +33,38 @@ PL_HOST = "127.0.0.1"
 PL_PORT = 3333
 STATE_FILE = "/var/lib/eggbot/room-reader-state.json"
 LOG_FILE = "/var/lib/eggbot/room-reader.log"
+AUDIT_FILE = "/var/lib/eggbot/room-reader-audit.jsonl"
 
 SILENCE_THRESHOLD = 90 * 60   # hold if no chats in this window
 ENGAGE_EVERY = 60 * 60        # speak this often while the room is alive
 CONTEXT_WINDOW = 3 * 3600
 MAX_CONTEXT_CHARS = 4000
-MAX_SAY = 200
+MAX_LINES = 40
+MAX_SAY = 220
+SKIP_NICKS = frozenset({"eggbot", "eggbot_", "eggbot2"})
+
+
+def audit_mode() -> bool:
+    v = os.environ.get("ROOM_READER_AUDIT", "1").strip().lower()
+    return v not in ("0", "false", "no", "off")
+
+
+def write_audit(text: str, context: str, extra: dict | None = None) -> bool:
+    rec = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "channel": CHANNEL,
+        "would_say": text,
+        "context": context,
+    }
+    if extra:
+        rec.update(extra)
+    try:
+        with open(AUDIT_FILE, "a") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return True
+    except OSError as e:
+        log(f"ERROR: audit write failed: {e}")
+        return False
 
 
 def log(msg: str) -> None:
@@ -77,6 +105,12 @@ def get_last_activity():
     con = db()
     try:
         row = con.execute(
+            "SELECT MAX(at) AS ts FROM chanlog WHERE lower(channel)=lower(?)",
+            (CHANNEL,),
+        ).fetchone()
+        if row and row["ts"]:
+            return int(row["ts"])
+        row = con.execute(
             "SELECT MAX(seen_at) AS ts FROM seen "
             "WHERE channel=? AND event=?",
             (CHANNEL, "saying"),
@@ -91,17 +125,20 @@ def get_recent_snippets(window_sec: int):
     try:
         cutoff = int(time.time()) - window_sec
         rows = con.execute(
-            "SELECT nick, last_text, seen_at FROM seen "
-            "WHERE channel=? AND event=? AND seen_at>=? AND last_text<>'' "
-            "ORDER BY seen_at ASC",
-            (CHANNEL, "saying", cutoff),
+            "SELECT nick, text, at FROM chanlog "
+            "WHERE lower(channel)=lower(?) AND at>=? "
+            "ORDER BY at DESC LIMIT ?",
+            (CHANNEL, cutoff, MAX_LINES),
         ).fetchall()
         out = []
-        for r in rows:
+        for r in reversed(list(rows)):
             nick = (r["nick"] or "").strip()
-            if nick.lower() in ("eggbot", "eggbot_", "eggbot2", PL_HANDLE):
+            if nick.lower() in SKIP_NICKS:
                 continue
-            out.append(dict(r))
+            text = (r["text"] or "").replace("\n", " ").strip()
+            if not text:
+                continue
+            out.append({"nick": nick, "last_text": text, "seen_at": int(r["at"])})
         return out
     finally:
         con.close()
@@ -143,16 +180,17 @@ def ask_xai(context: str, env: dict):
         log("WARN: XAI_API_KEY not set")
         return None
     prompt = (
-        "You are eggbot in IRC #lobby. Below are the most recent last-lines "
-        "from people in the room (not a full transcript). Write ONE short "
-        "casual statement or question that fits the room, under 80 characters. "
-        "No citations, no preamble, no quotes around it, no bot name prefix. "
-        "Just the message.\n\nRecent last-lines:\n" + (context or "(none)")
+        "You are eggbot in IRC #lobby. Below is recent channel chat, newest last. "
+        "If there is a live thread you can add to, write one casual line that fits, "
+        "under 180 characters. If the room has moved on, gone quiet (goodnights), "
+        "or you would be dredging up an old topic, reply with exactly SILENT. "
+        "No citations, no preamble, no quotes, no nick prefix.\n\n"
+        "Recent chat:\n" + (context or "(none)")
     )
     body = json.dumps({
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 80,
+        "max_tokens": 160,
         "temperature": 0.8,
     }).encode()
     req = urllib.request.Request(
@@ -169,6 +207,8 @@ def ask_xai(context: str, env: dict):
             data = json.loads(resp.read())
         text = (data["choices"][0]["message"]["content"] or "").strip()
         text = re.sub(r"\s+", " ", text).strip().strip('"').strip("'")
+        if text.upper() in ("SILENT", "NO_REPLY", "NOREPLY"):
+            return ""
         if len(text) > MAX_SAY:
             text = text[:MAX_SAY].rsplit(" ", 1)[0]
         return text or None
@@ -300,12 +340,35 @@ def tick(force: bool = False) -> None:
 
     snippets = get_recent_snippets(CONTEXT_WINDOW)
     context = build_context(snippets)
-    log(f"ENGAGE: {len(snippets)} last-lines, {status_line(now, last_active, state)}")
+    log(f"ENGAGE: {len(snippets)} chanlog lines, {status_line(now, last_active, state)}")
     env = load_env_file(ENV_FILE)
     text = ask_xai(context, env)
-    if not text:
+    if text is None:
         log("ENGAGE FAILED: no text (will retry next tick)")
         save_state(state)
+        return
+    if text == "":
+        log("ENGAGE: SILENT (room had nothing current to add)")
+        state["last_engage"] = now
+        state["next_due"] = now + ENGAGE_EVERY
+        state["dead"] = False
+        save_state(state)
+        return
+    extra = {
+        "last_active": last_active,
+        "silence_s": silence,
+        "n_context": len(snippets),
+    }
+    if audit_mode():
+        if write_audit(text, context, extra):
+            log("AUDIT: " + text)
+            state["last_engage"] = now
+            state["next_due"] = now + ENGAGE_EVERY
+            state["dead"] = False
+            save_state(state)
+        else:
+            log("ENGAGE FAILED: audit write (will retry next tick)")
+            save_state(state)
         return
     if send_partyline(text):
         log("SENT: " + text)
@@ -325,8 +388,9 @@ def main(argv) -> int:
         last_active = get_last_activity()
         state = load_state()
         log("STATUS: " + status_line(now, last_active, state))
+        log("AUDIT: " + ("on" if audit_mode() else "off"))
         snippets = get_recent_snippets(CONTEXT_WINDOW)
-        log(f"CONTEXT: {len(snippets)} last-lines in {CONTEXT_WINDOW}s window")
+        log(f"CONTEXT: {len(snippets)} chanlog lines in {CONTEXT_WINDOW}s window")
         return 0
     if "--ping-pl" in args:
         return 0 if ping_partyline() else 1

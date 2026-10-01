@@ -158,7 +158,7 @@ type AskReq struct {
 	Persona  string
 	Prompt   string
 	Topic    string
-	Dest     string // DestChannel, DestDM, DestCatchup, DestSearch
+	Dest     string // DestChannel, DestDM, DestCatchup, DestSearch, DestHistory
 	gen      uint64 // per-nick generation; a newer ask makes this one stale
 	Helpful  bool   // seen/quote/dm tools
 	Ops      bool   // kick/ban/topic tools
@@ -301,7 +301,7 @@ func (b *Brain) answer(req AskReq) (string, error) {
 
 	hist := b.historyFor(req)
 	ghNote, ghOK := b.lookupGitHub(req, hist)
-	useSearch := req.Search && req.Dest != DestCatchup && !ghOK
+	useSearch := req.Search && req.Dest != DestCatchup && req.Dest != DestHistory && !ghOK
 	msgs := b.buildMessages(req, hist, ghNote, useSearch)
 	searchX := useSearch && wantsXSearch(req.Prompt)
 
@@ -314,7 +314,7 @@ func (b *Brain) answer(req AskReq) (string, error) {
 		if t.Kind == "help" && !req.Helpful && req.Dest != DestDM {
 			continue
 		}
-		if req.Dest == DestCatchup {
+		if req.Dest == DestCatchup || req.Dest == DestHistory {
 			continue
 		}
 		// Tools run as the asking user. Injection cannot raise their flags.
@@ -368,7 +368,7 @@ func (b *Brain) answer(req AskReq) (string, error) {
 		} else {
 			var msg Message
 			maxTok := 0
-			if req.Dest == DestChannel || req.Dest == DestSearch {
+			if req.Dest == DestChannel || req.Dest == DestSearch || req.Dest == DestHistory {
 				maxTok = 180
 			}
 			msg, err = b.Client.chat(b.Client.Model, msgs, specs, maxTok)
