@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.4
+
+- A direct `eggbot: ...` or `!ask` is never dropped silently. Only sticky follow-ups (lines sent without a prefix) may be answered `SILENT` or `DROP`; if an explicit ask still comes back silent or empty, eggbot says it got no answer. Every suppressed reply is now logged.
+
 ## 0.1.3
 
 - IRCv3 bot mode: when the network advertises `BOT=<letter>` in 005, eggbot sets that user mode on itself once per connection, so other clients can recognise it by the `bot` tag.
