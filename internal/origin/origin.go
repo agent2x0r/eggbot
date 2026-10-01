@@ -20,6 +20,8 @@ type Origin struct {
 	Account string
 	CertFP  string
 	Handle  string
+	// IsBot is set when the sender carries the IRCv3 bot tag.
+	IsBot bool
 }
 
 func (o Origin) NUH() string {
@@ -40,6 +42,10 @@ func FromMessage(msg ircmsg.Message) Origin {
 	}
 	if ok, fp := msg.GetTag("certfp"); ok {
 		o.CertFP = strings.ToLower(fp)
+	}
+	// The bot tag is valueless; presence is the signal.
+	if ok, _ := msg.GetTag("bot"); ok {
+		o.IsBot = true
 	}
 	return o
 }

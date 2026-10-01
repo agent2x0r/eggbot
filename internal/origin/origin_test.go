@@ -1,6 +1,10 @@
 package origin
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/ergochat/irc-go/ircmsg"
+)
 
 func TestAddressed(t *testing.T) {
 	body, ok := Addressed("eggbot", "eggbot: hello there")
@@ -73,5 +77,17 @@ func TestCTCP(t *testing.T) {
 func TestIsChannel(t *testing.T) {
 	if !IsChannel("#foo") || IsChannel("nate") {
 		t.Fatal("channel detect")
+	}
+}
+
+func TestFromMessageBotTag(t *testing.T) {
+	tags := map[string]string{"bot": ""}
+	msg := ircmsg.MakeMessage(tags, "other!b@h", "PRIVMSG", "#c", "hi")
+	if !FromMessage(msg).IsBot {
+		t.Fatal("bot tag not read")
+	}
+	msg = ircmsg.MakeMessage(nil, "alice!a@h", "PRIVMSG", "#c", "hi")
+	if FromMessage(msg).IsBot {
+		t.Fatal("untagged sender flagged as bot")
 	}
 }

@@ -433,10 +433,15 @@ func (b *Bot) onPrivmsgSensitive(msg ircmsg.Message) {
 	target, text := msg.Params[0], msg.Params[1]
 	if origin.IsChannel(target) {
 		b.Protect.OnPrivmsg(target, o)
-		b.IRC.PrivmsgHelp(target, o.Nick+": send password commands in a private message")
+		if !o.IsBot {
+			b.IRC.PrivmsgHelp(target, o.Nick+": send password commands in a private message")
+		}
 		return
 	}
 	b.PL.Consolef('m', "[msg] <%s> %s", o.Nick, sensitive.Redact(text))
+	if o.IsBot {
+		return
+	}
 	b.handleMsg(o, u, text)
 }
 
@@ -466,7 +471,9 @@ func (b *Bot) onPrivmsg(msg ircmsg.Message) {
 	if origin.IsChannel(target) {
 		if sensitive.Public(b.IRC.Nick(), text) {
 			b.Protect.OnPrivmsg(target, o)
-			b.IRC.PrivmsgHelp(target, o.Nick+": send password commands in a private message")
+			if !o.IsBot {
+				b.IRC.PrivmsgHelp(target, o.Nick+": send password commands in a private message")
+			}
 			return
 		}
 		b.PL.Consolef('m', "[%s] <%s> %s", target, o.Nick, text)
@@ -480,6 +487,11 @@ func (b *Bot) onPrivmsg(msg ircmsg.Message) {
 		}
 		b.logChat(target, o.Nick, text)
 		b.Protect.OnPrivmsg(target, o)
+		if o.IsBot {
+			// Logged and remembered above, but never an invocation: two
+			// bots answering each other is a loop.
+			return
+		}
 		b.Scripts.Dispatch("pub", script.Event{
 			Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Account: o.Account,
 			Channel: target, Text: text,
@@ -491,6 +503,9 @@ func (b *Bot) onPrivmsg(msg ircmsg.Message) {
 		return
 	}
 	b.PL.Consolef('m', "[msg] <%s> %s", o.Nick, text)
+	if o.IsBot {
+		return
+	}
 	b.Scripts.Dispatch("msg", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Text: text,
 	})
@@ -507,6 +522,9 @@ func (b *Bot) onAction(o origin.Origin, u *userfile.User, target, text string) {
 	}
 	b.logChat(target, o.Nick, "/me "+text)
 	b.Protect.OnPrivmsg(target, o)
+	if o.IsBot {
+		return
+	}
 	b.Scripts.Dispatch("pubm", script.Event{
 		Nick: o.Nick, Host: o.NUH(), Handle: o.Handle, Channel: target, Text: "\x01ACTION " + text + "\x01",
 	})
@@ -522,7 +540,7 @@ func redactQuery(text string) string {
 }
 
 func (b *Bot) onCTCP(o origin.Origin, u *userfile.User, target, cmd, arg string) {
-	if irccase.Equal(o.Nick, b.IRC.Nick()) {
+	if o.IsBot || irccase.Equal(o.Nick, b.IRC.Nick()) {
 		return
 	}
 	switch cmd {
